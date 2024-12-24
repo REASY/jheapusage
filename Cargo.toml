@@ -1,0 +1,20 @@
+[package]
+name = "jheapusage"
+version = "0.1.0"
+authors = ["Artavazd Balaian <reasyu@gmail.com>"]
+license = "MIT License"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5.23", features = ["derive"] }
+libbpf-rs = "0.24.8"
+libc = "0.2"
+plain = "0.2"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber= { version = "0.3", features = ["env-filter"] }
+
+
+[build-dependencies]
+libbpf-cargo = "0.24.8"
+vmlinux = { version = "0.0", git = "https://github.com/libbpf/vmlinux.h.git", rev = "83a228cf37fc65f2d14e4896a04922b5ee531a94" }
