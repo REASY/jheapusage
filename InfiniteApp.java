@@ -17,7 +17,7 @@ public class InfiniteApp {
                 // Handle exception if the thread is interrupted 
                 System.out.println("Thread was interrupted: " + e.getMessage()); 
                 break; // Exit the loop if interrupted 
-            } 
+            }
         } 
  
         System.out.println("Application has stopped."); 

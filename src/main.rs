@@ -97,7 +97,7 @@ fn main() -> Result<()> {
     }
     let mut open_object = MaybeUninit::uninit();
     let open_skel = hotspot_usdt_builder.open(&mut open_object)?;
-    open_skel.maps.rodata_data.targ_pid = args.pid as i32;
+    open_skel.maps.rodata_data.target_userspace_pid = args.pid as i32;
 
     let mut skel: HotspotUsdtSkel = open_skel.load()?;
     debug!("Loaded `HotspotUsdtSkel`");
@@ -136,5 +136,14 @@ fn main() -> Result<()> {
 
     loop {
         ringbuf.poll(Duration::from_millis(100))?;
+        if skel.maps.bss_data.has_exited {
+            info!(
+                "The process {} has exited with exit code {}",
+                args.pid, skel.maps.bss_data.exit_code
+            );
+            break;
+        }
     }
+
+    Ok(())
 }

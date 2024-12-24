@@ -6,12 +6,14 @@
 #include <bpf/usdt.bpf.h>
 #include "hotspot_usdt.h"
 
-const volatile pid_t targ_pid = 0;
-const u64 dev = 0x60;
-const u64 ino = 912591;
+const volatile pid_t target_userspace_pid = 0;
+volatile bool has_exited = false;
+volatile int exit_code = 0;
 
 // Dummy instance to get skeleton to generate definition for `struct mem_pool_gc_end_event`
 struct mem_pool_gc_end_event _mem_pool_gc_end_event = {0};
+
+#define MAX_COMMAND_SIZE 128
 
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
@@ -20,23 +22,28 @@ struct {
 
 SEC("tracepoint/sched/sched_process_exit")
 int sched_process_exit(struct trace_event_raw_sched_process_template* ctx) {
-    // FIXME properly handle the exit of Java app that we care `targ_pid`
-    u64 id = bpf_get_current_pid_tgid();
-    pid_t pid = id >> 32;
-    pid_t tgid = id & 0xffffffff;
-    /* ignore thread exits */
-//    if (pid != tid)
-//        return 0;
+    u64 pid_tgid = bpf_get_current_pid_tgid();
+    // Thread or Task Group ID
+    pid_t tgid = pid_tgid >> 32;
+    pid_t pid = pid_tgid & 0xffffffff;
+    // ignore thread exits
+    if (pid != tgid)
+        return 0;
 
-    char command[128];
+    // That's right, Userspace process id is tgid in kernel-space!
+    // https://utcc.utoronto.ca/~cks/space/blog/linux/PidsTgidsAndTasks
+    pid_t userspace_pid = tgid;
+    if (target_userspace_pid && userspace_pid != target_userspace_pid)
+        return 0;
+
+    char command[MAX_COMMAND_SIZE];
     __builtin_memset(command, 0, sizeof(command));
     bpf_get_current_comm(command, sizeof(command));
-    struct task_struct* task = (struct task_struct*)bpf_get_current_task();
 
-    bpf_printk("sched_process_exit: Kernel id %d, pid %d, tid %d, command: %s", id, pid, tgid, command);
-
-    if (targ_pid && pid != targ_pid)
-        return 0;
+	struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+    exit_code = BPF_CORE_READ(task, exit_code)  >> 8;
+    has_exited = true;
+    bpf_printk("sched_process_exit: Kernel (pid_tgid %ld, tgid %d, pid %d), Userspace PID %d, command: %s, exit_code: %d", pid_tgid, tgid, pid, userspace_pid, command, exit_code);
 }
 
 
@@ -74,8 +81,7 @@ int BPF_USDT(handle_gc_end, uintptr_t* manager, int manager_len, uintptr_t* pool
     e->max_size = max_size;
 
     bpf_ringbuf_submit(e, 0);
-//    bpf_printk("handle_gc_end: submitted ringbuf value");
     return 0;
 }
 
-char LICENSE[] SEC("license") = "GPL";
+char LICENSE[] SEC("license") = "Dual MIT/GPL";
