@@ -14,7 +14,7 @@ The project requires the following tools configured on your developer machine:
 On Ubuntu/Debian, you need:
 ```shell
 sudo apt update
-sudo apt-get install -y --no-install-recommends make llvm clang libelf1 libelf-dev zlib1g-dev
+sudo apt-get install -y --no-install-recommends build-essential make llvm clang libelf1 libelf-dev zlib1g-dev
 ```
 
 ### Build the project
