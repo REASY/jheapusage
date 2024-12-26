@@ -6,9 +6,10 @@
 #include <bpf/usdt.bpf.h>
 #include "hotspot_usdt.h"
 
+const volatile __u64 boot_time_ns = 0;
 const volatile pid_t target_userspace_pid = 0;
-volatile bool has_exited = false;
-volatile int exit_code = 0;
+volatile _Bool has_exited = false;
+volatile __s32 exit_code = 0;
 
 // Dummy instance to get skeleton to generate definition for `struct mem_pool_gc_end_event`
 struct mem_pool_gc_end_event _mem_pool_gc_end_event = {0};
@@ -22,7 +23,7 @@ struct {
 
 SEC("tracepoint/sched/sched_process_exit")
 int sched_process_exit(struct trace_event_raw_sched_process_template* ctx) {
-    u64 pid_tgid = bpf_get_current_pid_tgid();
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
     // Thread or Task Group ID
     pid_t tgid = pid_tgid >> 32;
     pid_t pid = pid_tgid & 0xffffffff;
@@ -36,7 +37,7 @@ int sched_process_exit(struct trace_event_raw_sched_process_template* ctx) {
     if (target_userspace_pid && userspace_pid != target_userspace_pid)
         return 0;
 
-    char command[MAX_COMMAND_SIZE];
+    char command[TASK_COMM_LEN];
     __builtin_memset(command, 0, sizeof(command));
     bpf_get_current_comm(command, sizeof(command));
 
@@ -58,7 +59,7 @@ int BPF_USDT(handle_gc_end, uintptr_t* manager, int manager_len, uintptr_t* pool
     if (!e)
         return 0;
 
-    e->ts  = bpf_ktime_get_ns();
+    e->ts  = bpf_ktime_get_ns() + boot_time_ns;
     e->pid = bpf_get_current_pid_tgid() >> 32;
     __builtin_memset(e->manager, 0, sizeof(e->manager));
     __builtin_memset(e->pool, 0, sizeof(e->pool));

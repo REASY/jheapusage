@@ -6,14 +6,19 @@ license = "MIT License"
 edition = "2021"
 
 [dependencies]
+chrono = "0.4"
 clap = { version = "4.5.23", features = ["derive"] }
+lazy_static = "1"
 libbpf-rs = "0.24.8"
 libc = "0.2"
+opentelemetry = "0.27.1"
+opentelemetry-otlp = "0.27.0"
+opentelemetry_sdk = { version = "0.27.1", features = ["rt-tokio"] }
 plain = "0.2"
-thiserror = "1.0"
+thiserror = "2"
 tracing = "0.1"
 tracing-subscriber= { version = "0.3", features = ["env-filter"] }
-
+tokio = { version = "1.42.0", features = ["full"] }
 
 [build-dependencies]
 libbpf-cargo = "0.24.8"

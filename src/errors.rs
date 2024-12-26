@@ -13,6 +13,8 @@ pub enum ErrorKind {
     SetMemLockLimitError(#[source] std::io::Error),
     #[error("BpfError: {0}")]
     BpfError(#[from] libbpf_rs::Error),
+    #[error("MetricError: {0}")]
+    MetricError(#[from] opentelemetry_sdk::metrics::MetricError),
 }
 
 impl<E> From<E> for AppError
