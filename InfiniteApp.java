@@ -11,7 +11,7 @@ public class InfiniteApp {
                 int nextSize = ThreadLocalRandom.current().nextInt(10000000, 20000000);
                 buffer = new long[nextSize];
                 // Sleep for a while to prevent high CPU usage 
-                Thread.sleep(1000); // Sleep for 1 second
+                Thread.sleep(2000); // Sleep for 2 second
                 System.out.println("buffer is " + buffer.length);
             } catch (InterruptedException e) {
                 // Handle exception if the thread is interrupted 

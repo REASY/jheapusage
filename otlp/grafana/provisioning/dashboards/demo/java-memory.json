@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 7,
+  "id": 2,
   "links": [],
   "panels": [
     {
@@ -84,118 +84,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 19,
-        "w": 8,
+        "h": 18,
+        "w": 13,
         "x": 0,
-        "y": 0
-      },
-      "id": 1,
-      "interval": "5",
-      "options": {
-        "legend": {
-          "calcs": [
-            "max",
-            "mean",
-            "lastNotNull"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true,
-          "sortBy": "Max",
-          "sortDesc": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.4.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "webstore-metrics"
-          },
-          "disableTextWrap": false,
-          "editorMode": "code",
-          "expr": "sum by(pool) (max by(pool) (runtime_java_memory_init_size_bytes{service_name=\"jheapusage\"}))",
-          "fullMetaSearch": false,
-          "includeNullMetadata": true,
-          "legendFormat": "{{ pool }}",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        }
-      ],
-      "title": "Initial Java Memory",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "webstore-metrics"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": true,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "fieldMinMax": true,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 19,
-        "w": 8,
-        "x": 8,
         "y": 0
       },
       "id": 4,
@@ -227,10 +118,10 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(pool) (max by(pool) (runtime_java_memory_used_bytes{service_name=\"jheapusage\"}))",
+          "expr": "sum(runtime_java_memory_used_bytes{service_name=\"jheapusage\", pool=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\", manager=~\"G1 Young Generation|G1 Old Generation\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
-          "legendFormat": "{{ pool }}",
+          "legendFormat": "Used heap",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -302,10 +193,116 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 17,
-        "w": 8,
+        "h": 18,
+        "w": 11,
+        "x": 13,
+        "y": 0
+      },
+      "id": 3,
+      "interval": "5",
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "webstore-metrics"
+          },
+          "disableTextWrap": false,
+          "editorMode": "code",
+          "expr": "sum by(pool) (max by(pool) (runtime_java_memory_max_size_bytes{service_name=\"jheapusage\"}))",
+          "fullMetaSearch": false,
+          "includeNullMetadata": true,
+          "legendFormat": "{{ pool }}",
+          "range": true,
+          "refId": "A",
+          "useBackend": false
+        }
+      ],
+      "title": "Maximum Java Memory",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "webstore-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": true,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "fieldMinMax": true,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 18,
+        "w": 13,
         "x": 0,
-        "y": 19
+        "y": 18
       },
       "id": 2,
       "interval": "5",
@@ -411,22 +408,25 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 17,
-        "w": 8,
-        "x": 8,
-        "y": 19
+        "h": 18,
+        "w": 11,
+        "x": 13,
+        "y": 18
       },
-      "id": 3,
+      "id": 1,
       "interval": "5",
       "options": {
         "legend": {
           "calcs": [
-            "lastNotNull",
-            "max"
+            "max",
+            "mean",
+            "lastNotNull"
           ],
           "displayMode": "table",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": true,
+          "sortBy": "Max",
+          "sortDesc": true
         },
         "tooltip": {
           "mode": "single",
@@ -442,7 +442,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(pool) (max by(pool) (runtime_java_memory_max_size_bytes{service_name=\"jheapusage\"}))",
+          "expr": "sum by(pool) (max by(pool) (runtime_java_memory_init_size_bytes{service_name=\"jheapusage\"}))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "legendFormat": "{{ pool }}",
@@ -451,7 +451,7 @@
           "useBackend": false
         }
       ],
-      "title": "Maximum Java Memory",
+      "title": "Initial Java Memory",
       "type": "timeseries"
     }
   ],
@@ -470,6 +470,6 @@
   "timezone": "browser",
   "title": "Java Memory",
   "uid": "fe8359cb3n08wd",
-  "version": 15,
+  "version": 1,
   "weekStart": ""
 }

@@ -176,7 +176,7 @@ async fn main() -> Result<()> {
     );
 
     // Setup OpenTelementry
-    let meter_provider = init_metrics("http://localhost:4317/v1/metrics")?;
+    let meter_provider = init_metrics()?;
     global::set_meter_provider(meter_provider.clone());
 
     let should_stop = Arc::new(AtomicBool::new(false));
@@ -228,11 +228,10 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn init_metrics(endpoint: &str) -> Result<SdkMeterProvider> {
+fn init_metrics() -> Result<SdkMeterProvider> {
     let exporter = MetricExporter::builder()
         .with_tonic()
         .with_protocol(Protocol::Grpc) //can be changed to `Protocol::HttpJson` to export in JSON format
-        .with_endpoint(endpoint)
         .build()?;
     const SERVICE_NAME: &str = "service.name";
     let reader = opentelemetry_sdk::metrics::PeriodicReader::builder(exporter, runtime::Tokio)
