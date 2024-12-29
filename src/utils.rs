@@ -1,6 +1,10 @@
+use crate::errors::ErrorKind::FuncNotFoundError;
 use crate::errors::{AppError, ErrorKind, Result};
 use chrono::{DateTime, Utc};
 use libc::{clock_gettime, timespec, CLOCK_BOOTTIME, CLOCK_REALTIME};
+use object::elf;
+use object::elf::STT_FUNC;
+use object::read::elf::{FileHeader, Sym};
 use std::ffi::CStr;
 use std::fs::File;
 use std::io::{BufRead, Read};
@@ -37,6 +41,25 @@ pub fn find_loaded_library(pid: u32, library_name: &str) -> Result<Option<String
         }
     }
     Ok(None)
+}
+
+pub fn find_func_symbol(library_name: &str, name: &str) -> Result<String> {
+    let data = fs::read(library_name)?;
+    let elf = elf::FileHeader64::<object::Endianness>::parse(&*data)?;
+    let endian = elf.endian()?;
+    let sections = elf.sections(endian, &*data)?;
+    let symbols = sections.symbols(endian, &*data, elf::SHT_SYMTAB)?;
+    for symbol in symbols.iter() {
+        if symbol.st_info() != STT_FUNC {
+            continue;
+        }
+        let name_bytes = symbol.name(endian, symbols.strings())?;
+        let read_name = String::from_utf8_lossy(name_bytes);
+        if read_name.contains(name) {
+            return Ok(read_name.to_string());
+        }
+    }
+    Err(AppError::from(FuncNotFoundError(name.to_string())))
 }
 
 #[allow(dead_code)]
@@ -161,6 +184,7 @@ fn timespec_to_ns(ts: &timespec) -> u64 {
     (ts.tv_sec as u64).saturating_mul(1_000_000_000) + (ts.tv_nsec as u64)
 }
 
+#[allow(unused)]
 pub fn str_from_null_terminated_utf8_safe(s: &[u8]) -> &str {
     if s.iter().any(|&x| x == 0) {
         unsafe { str_from_null_terminated_utf8(s) }
@@ -169,6 +193,7 @@ pub fn str_from_null_terminated_utf8_safe(s: &[u8]) -> &str {
     }
 }
 
+#[allow(unused)]
 unsafe fn str_from_null_terminated_utf8(s: &[u8]) -> &str {
     CStr::from_ptr(s.as_ptr() as *const _).to_str().unwrap()
 }

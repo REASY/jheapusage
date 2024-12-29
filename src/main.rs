@@ -11,6 +11,7 @@ use lazy_static::lazy_static;
 use libbpf_rs::skel::OpenSkel;
 use libbpf_rs::skel::Skel;
 use libbpf_rs::skel::SkelBuilder;
+use libbpf_rs::UprobeOpts;
 use opentelemetry::{global, KeyValue};
 use opentelemetry_otlp::{MetricExporter, Protocol, WithExportConfig};
 use opentelemetry_sdk::metrics::SdkMeterProvider;
@@ -32,11 +33,11 @@ mod hotspot_usdt {
     ));
 }
 
-use crate::hotspot_usdt::types::mem_pool_gc_end_event;
+use crate::hotspot_usdt::types::gc_heap_summary_event;
 use crate::otlp::process_as_otlp;
 use crate::utils::{
-    check_java_process, estimate_system_boot_time, find_loaded_library, increase_memlock_rlimit,
-    str_from_null_terminated_utf8_safe, unix_timestamp_ns_to_datetime,
+    check_java_process, estimate_system_boot_time, find_func_symbol, find_loaded_library,
+    increase_memlock_rlimit, unix_timestamp_ns_to_datetime,
 };
 use hotspot_usdt::*;
 use tracing::{debug, info, warn};
@@ -53,33 +54,23 @@ struct AppArgs {
     verbose: bool,
 }
 
-unsafe impl Plain for mem_pool_gc_end_event {}
+unsafe impl Plain for gc_heap_summary_event {}
 
 lazy_static! {
     static ref BOOT_DATE_TIME: u64 = estimate_system_boot_time::<25>().unwrap();
 }
 
-impl std::fmt::Display for mem_pool_gc_end_event {
+impl std::fmt::Display for gc_heap_summary_event {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        // FIXME
-        let manager = str_from_null_terminated_utf8_safe(self.manager.as_ref());
-        // FIXME
-        let pool = str_from_null_terminated_utf8_safe(self.pool.as_ref());
-        let max_size = if self.max_size == u64::MAX {
-            None
-        } else {
-            Some(self.max_size)
-        };
+        let t = unsafe { self.gc_when_type.assume_init() };
         write!(
             f,
-            "ts: {}, pid: {}, manager: {}, pool: {}, used: {}, committed: {}, max_size: {:?}",
+            "ts: {}, pid: {}, tid: {}, type: {:?}, used: {}",
             unix_timestamp_ns_to_datetime(self.ts as i64),
             self.pid,
-            manager,
-            pool,
+            self.tid,
+            t,
             self.used,
-            self.committed,
-            max_size
         )?;
 
         Ok(())
@@ -87,8 +78,17 @@ impl std::fmt::Display for mem_pool_gc_end_event {
 }
 
 const LIBJVM_NAME: &'static str = "libjvm.so";
-const USDT_PROVIDER: &'static str = "hotspot";
-const USDT_NAME: &'static str = "mem__pool__gc__end";
+
+/// `report_gc_heap_summary` method is available since Java 11, however it is am internal (HIDDEN) C++ function so the name is mangled
+/// https://github.com/openjdk/jdk/blob/jdk-11%2B28/src/hotspot/share/gc/shared/gcTraceSend.cpp#L392
+/*
+➜ readelf -Ws --dyn-syms /home/user/.sdkman/candidates/java/11.0.25-zulu/lib/server/libjvm.so | grep -i report_gc_heap_summary
+ 34411: 00000000007e26d0     5 FUNC    LOCAL  HIDDEN    13 _ZNK8GCTracer22report_gc_heap_summaryEN6GCWhen4TypeERK13GCHeapSummary
+
+➜ readelf -Ws --dyn-syms /home/user/.sdkman/candidates/java/21.0.5-zulu/lib/server/libjvm.so | grep -i report_gc_heap_summary
+ 38234: 00000000008662f0     5 FUNC    LOCAL  HIDDEN    12 _ZNK8GCTracer22report_gc_heap_summaryEN6GCWhen4TypeERK13GCHeapSummary
+*/
+const REPORT_GC_HEAP_SUMMARY_FUNC: &'static str = "report_gc_heap_summary";
 
 struct JobQueue<T> {
     elements: Arc<Mutex<VecDeque<T>>>,
@@ -144,6 +144,12 @@ async fn main() -> Result<()> {
         );
         return Ok(());
     };
+    let report_gc_heap_summary_name =
+        find_func_symbol(libjvm_path.as_str(), REPORT_GC_HEAP_SUMMARY_FUNC)?;
+    info!(
+        "report_gc_heap_summary_name: {}",
+        report_gc_heap_summary_name
+    );
 
     increase_memlock_rlimit()?;
     debug!("Increased memlock rlimit");
@@ -164,15 +170,21 @@ async fn main() -> Result<()> {
     skel.attach()?;
     debug!("Attached");
 
-    let link = skel.progs.handle_gc_end.attach_usdt(
-        args.pid as i32,
-        libjvm_path,
-        USDT_PROVIDER,
-        USDT_NAME,
-    )?;
+    let link = skel
+        .progs
+        .send_gc_heap_summary_event
+        .attach_uprobe_with_opts(
+            args.pid as i32,
+            libjvm_path,
+            0,
+            UprobeOpts {
+                func_name: report_gc_heap_summary_name,
+                ..Default::default()
+            },
+        )?;
     info!(
-        "Attached USDT {}:{} to the process {}. Link is {:?}",
-        USDT_PROVIDER, USDT_NAME, args.pid, link
+        "Attached UProbe to the process {}. Link is {:?}",
+        args.pid, link
     );
 
     // Setup OpenTelementry
@@ -180,7 +192,7 @@ async fn main() -> Result<()> {
     global::set_meter_provider(meter_provider.clone());
 
     let should_stop = Arc::new(AtomicBool::new(false));
-    let queue: JobQueue<mem_pool_gc_end_event> = JobQueue::new();
+    let queue: JobQueue<gc_heap_summary_event> = JobQueue::new();
 
     let arc_queue = Arc::new(queue);
     let arc_queue_2 = arc_queue.clone();
@@ -192,7 +204,7 @@ async fn main() -> Result<()> {
     let mut processed: usize = 0;
     let callback = |data: &[u8]| {
         let event =
-            plain::from_bytes::<mem_pool_gc_end_event>(data).expect("failed to convert bytes");
+            plain::from_bytes::<gc_heap_summary_event>(data).expect("failed to convert bytes");
         debug!(
             "Received {} bytes, the payload: {{ {} }}",
             data.len(),
