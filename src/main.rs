@@ -1,45 +1,34 @@
 // SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
 
+mod ebpf;
 mod errors;
+mod events;
+mod handlers;
 mod logger;
 mod otlp;
 mod utils;
 
-use clap::Parser;
-use errors::Result;
-use lazy_static::lazy_static;
-use libbpf_rs::skel::OpenSkel;
-use libbpf_rs::skel::Skel;
-use libbpf_rs::skel::SkelBuilder;
-use libbpf_rs::UprobeOpts;
-use opentelemetry::{global, KeyValue};
-use opentelemetry_otlp::{MetricExporter, Protocol, WithExportConfig};
-use opentelemetry_sdk::metrics::SdkMeterProvider;
-use opentelemetry_sdk::resource::{
-    EnvResourceDetector, ResourceDetector, SdkProvidedResourceDetector, TelemetryResourceDetector,
+use crate::ebpf::jvm::types::{gc_heap_summary_event, mem_pool_gc_event};
+use crate::ebpf::jvm::JvmMaps;
+use crate::ebpf::Ebpf;
+use crate::handlers::{GenericEventHandler, RingBufferCallbackHandler};
+use crate::otlp::{
+    init_metrics, process_as_otlp_gc_heap_summary_event, process_as_otlp_mem_pool_gc_event,
 };
-use opentelemetry_sdk::{runtime, Resource};
-use plain::Plain;
-use std::collections::VecDeque;
-use std::mem::MaybeUninit;
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-
-mod hotspot_usdt {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/ebpf/hotspot_usdt.skel.rs"
-    ));
-}
-
-use crate::hotspot_usdt::types::gc_heap_summary_event;
-use crate::otlp::process_as_otlp;
 use crate::utils::{
     check_java_process, estimate_system_boot_time, find_func_symbol, find_loaded_library,
     increase_memlock_rlimit, unix_timestamp_ns_to_datetime,
 };
-use hotspot_usdt::*;
+use clap::Parser;
+use errors::Result;
+use lazy_static::lazy_static;
+use opentelemetry::global;
+use opentelemetry_otlp::Protocol;
+use std::collections::VecDeque;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
+use std::thread::sleep;
+use std::time::Duration;
 use tracing::{debug, info, warn};
 
 #[derive(Parser, Debug, Clone)]
@@ -54,32 +43,13 @@ struct AppArgs {
     verbose: bool,
 }
 
-unsafe impl Plain for gc_heap_summary_event {}
-
 lazy_static! {
     static ref BOOT_DATE_TIME: u64 = estimate_system_boot_time::<25>().unwrap();
 }
 
-impl std::fmt::Display for gc_heap_summary_event {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let t = unsafe { self.gc_when_type.assume_init() };
-        write!(
-            f,
-            "ts: {}, pid: {}, tid: {}, type: {:?}, used: {}",
-            unix_timestamp_ns_to_datetime(self.ts as i64),
-            self.pid,
-            self.tid,
-            t,
-            self.used,
-        )?;
-
-        Ok(())
-    }
-}
-
 const LIBJVM_NAME: &'static str = "libjvm.so";
 
-/// `report_gc_heap_summary` method is available since Java 11, however it is am internal (HIDDEN) C++ function so the name is mangled
+/// `GCTracer::report_gc_heap_summary` method is available since Java 11, however it is am internal (HIDDEN) C++ function so the name is mangled
 /// https://github.com/openjdk/jdk/blob/jdk-11%2B28/src/hotspot/share/gc/shared/gcTraceSend.cpp#L392
 /*
 ➜ readelf -Ws --dyn-syms /home/user/.sdkman/candidates/java/11.0.25-zulu/lib/server/libjvm.so | grep -i report_gc_heap_summary
@@ -154,112 +124,102 @@ async fn main() -> Result<()> {
     increase_memlock_rlimit()?;
     debug!("Increased memlock rlimit");
 
-    let mut hotspot_usdt_builder = HotspotUsdtSkelBuilder::default();
-    if args.verbose {
-        hotspot_usdt_builder.obj_builder.debug(true);
-    }
-    let mut open_object = MaybeUninit::uninit();
-    let open_skel = hotspot_usdt_builder.open(&mut open_object)?;
-    open_skel.maps.rodata_data.target_userspace_pid = args.pid as i32;
-    open_skel.maps.rodata_data.boot_time_ns = *BOOT_DATE_TIME;
-
-    let mut skel: HotspotUsdtSkel = open_skel.load()?;
-    debug!("Loaded `HotspotUsdtSkel`");
-
-    // Begin tracing
-    skel.attach()?;
-    debug!("Attached");
-
-    let link = skel
-        .progs
-        .send_gc_heap_summary_event
-        .attach_uprobe_with_opts(
-            args.pid as i32,
-            libjvm_path,
-            0,
-            UprobeOpts {
-                func_name: report_gc_heap_summary_name,
-                ..Default::default()
-            },
-        )?;
-    info!(
-        "Attached UProbe to the process {}. Link is {:?}",
-        args.pid, link
-    );
+    let mut epbf = Ebpf::new(args.verbose, |skel| {
+        skel.maps.rodata_data.target_userspace_pid = args.pid as i32;
+        skel.maps.rodata_data.boot_time_ns = *BOOT_DATE_TIME;
+    });
+    epbf.setup(args.pid, libjvm_path.clone(), report_gc_heap_summary_name)?;
+    let jvm_maps = epbf.maps();
 
     // Setup OpenTelementry
-    let meter_provider = init_metrics()?;
+    let meter_provider = init_metrics(Protocol::HttpJson)?;
     global::set_meter_provider(meter_provider.clone());
 
     let should_stop = Arc::new(AtomicBool::new(false));
-    let queue: JobQueue<gc_heap_summary_event> = JobQueue::new();
+    let queue_gc_heap_summary_event: Arc<JobQueue<gc_heap_summary_event>> =
+        Arc::new(JobQueue::new());
+    let queue_mem_pool_gc_event: Arc<JobQueue<mem_pool_gc_event>> = Arc::new(JobQueue::new());
 
-    let arc_queue = Arc::new(queue);
-    let arc_queue_2 = arc_queue.clone();
-    let should_stop_cloned = should_stop.clone();
-    tokio::spawn(async move {
-        process_as_otlp(arc_queue, should_stop_cloned).await;
+    let mut gc_heap_summary_event_handler =
+        GenericEventHandler::new(queue_gc_heap_summary_event.clone());
+    tokio::spawn({
+        let should_stop = should_stop.clone();
+        async move {
+            process_as_otlp_gc_heap_summary_event(queue_gc_heap_summary_event, should_stop).await;
+        }
     });
 
-    let mut processed: usize = 0;
-    let callback = |data: &[u8]| {
-        let event =
-            plain::from_bytes::<gc_heap_summary_event>(data).expect("failed to convert bytes");
-        debug!(
-            "Received {} bytes, the payload: {{ {} }}",
-            data.len(),
-            event
-        );
-        arc_queue_2.push(*event);
-
-        if processed % 50 == 0 {
-            info!("Events {} was processed", processed);
+    let mut mem_pool_gc_end_event_handler =
+        GenericEventHandler::new(queue_mem_pool_gc_event.clone());
+    tokio::spawn({
+        let should_stop = should_stop.clone();
+        async move {
+            process_as_otlp_mem_pool_gc_event(queue_mem_pool_gc_event, should_stop).await;
         }
-        processed += 1;
-        0
-    };
-    let mut builder = libbpf_rs::RingBufferBuilder::new();
-    builder
-        .add(&skel.maps.ringbuf, callback)
-        .expect("failed to add ringbuf");
-    let ringbuf = builder.build().expect("failed to build");
-    info!("Built RingBuffer {:?}", ringbuf);
+    });
 
+    let mut rg0 = libbpf_rs::RingBufferBuilder::new();
+    rg0.add(&jvm_maps.rg_send_gc_heap_summary_event, move |data| {
+        gc_heap_summary_event_handler.callback(data)
+    })?;
+    let rg_send_gc_heap_summary_event = rg0
+        .build()
+        .expect("failed to build ring buffer for rg_send_gc_heap_summary_event");
+    info!(
+        "Built rg_send_gc_heap_summary_event {:?}",
+        rg_send_gc_heap_summary_event
+    );
+
+    let mut rg1 = libbpf_rs::RingBufferBuilder::new();
+    rg1.add(&jvm_maps.rg_hotspot_mem_pool_gc, move |data| {
+        mem_pool_gc_end_event_handler.callback(data)
+    })?;
+    let rg_hotspot_mem_pool_gc = rg1
+        .build()
+        .expect("failed to build ring buffer for rg_hotspot_mem_pool_gc");
+    info!("Built rg_hotspot_mem_pool_gc {:?}", rg_hotspot_mem_pool_gc);
+
+    let t1 = tokio::spawn({
+        let should_stop = should_stop.clone();
+        async move {
+            while !should_stop.load(std::sync::atomic::Ordering::Relaxed) {
+                rg_send_gc_heap_summary_event
+                    .poll(Duration::from_millis(100))
+                    .unwrap();
+            }
+        }
+    });
+
+    let t2 = tokio::spawn({
+        let should_stop = should_stop.clone();
+        async move {
+            while !should_stop.load(std::sync::atomic::Ordering::Relaxed) {
+                rg_hotspot_mem_pool_gc
+                    .poll(Duration::from_millis(100))
+                    .unwrap();
+            }
+        }
+    });
+
+    wait_for_target_process_to_exit(args.pid, jvm_maps, should_stop);
+
+    info!("Waiting for tasks to complete...");
+    t1.await?;
+    t2.await?;
+    info!("Done");
+    Ok(())
+}
+
+fn wait_for_target_process_to_exit(pid: u32, jvm_maps: &JvmMaps, should_stop: Arc<AtomicBool>) {
     loop {
-        ringbuf.poll(Duration::from_millis(10))?;
-        if skel.maps.bss_data.has_exited {
+        if jvm_maps.bss_data.has_exited {
             info!(
                 "The process {} has exited with exit code {}",
-                args.pid, skel.maps.bss_data.exit_code
+                pid, jvm_maps.bss_data.exit_code
             );
             should_stop.store(true, std::sync::atomic::Ordering::SeqCst);
             break;
         }
+        sleep(Duration::from_millis(100));
     }
-
-    Ok(())
-}
-
-fn init_metrics() -> Result<SdkMeterProvider> {
-    let exporter = MetricExporter::builder()
-        .with_tonic()
-        .with_protocol(Protocol::Grpc) //can be changed to `Protocol::HttpJson` to export in JSON format
-        .build()?;
-    const SERVICE_NAME: &str = "service.name";
-    let reader = opentelemetry_sdk::metrics::PeriodicReader::builder(exporter, runtime::Tokio)
-        .with_interval(Duration::from_millis(500))
-        .build();
-
-    let detectors: Vec<Box<dyn ResourceDetector>> = vec![
-        Box::new(SdkProvidedResourceDetector),
-        Box::new(TelemetryResourceDetector),
-        Box::new(EnvResourceDetector::new()),
-    ];
-    let resource = Resource::from_detectors(Duration::from_secs(5), detectors).merge(
-        &Resource::new_with_defaults([KeyValue::new(SERVICE_NAME, "jheapusage")]),
-    );
-    Ok(SdkMeterProvider::builder()
-        .with_resource(resource)
-        .with_reader(reader)
-        .build())
 }

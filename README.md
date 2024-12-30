@@ -14,7 +14,7 @@ The project requires the following tools configured on your developer machine:
 On Ubuntu/Debian, you need:
 ```shell
 sudo apt update
-sudo apt-get install -y --no-install-recommends build-essential make llvm clang libelf1 libelf-dev zlib1g-dev
+sudo apt-get install -y --no-install-recommends clang-format build-essential make llvm clang libelf1 libelf-dev zlib1g-dev
 ```
 
 ### Build the project
@@ -64,42 +64,57 @@ Options:
 
 ### Example of run with [InfiniteApp.java](InfiniteApp.java)
 1. Compile and run `javac InfiniteApp.java && java -Xmx400M InfiniteApp`
-```shell
-javac InfiniteApp.java && java -Xmx400M InfiniteApp
-The application is running. Press Ctrl+C to stop. Process Id: 58842
-buffer is 17964196
-buffer is 19107073
-buffer is 15320567
-buffer is 15074673
-buffer is 13406603
-buffer is 14874387
-buffer is 10877020
-```
+   ```shell
+   javac InfiniteApp.java && java -Xmx500M InfiniteApp
+   Runtime is: 21.0.5+11-LTS
+   The application is running. Press Ctrl+C to stop. Process Id: 37885
+   ```
 2. Use the process id from above with `jheapusage`: `sudo target/release/jheapusage --pid 58842`
+   ```shell
+   sudo OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 target/release/jheapusage --pid 37885           
+   2025-01-02T03:53:28.138179Z  INFO main ThreadId(01) jheapusage: src/main.rs:97: Received args: AppArgs { pid: 37885, verbose: false }
+   2025-01-02T03:53:28.138193Z  INFO main ThreadId(01) jheapusage: src/main.rs:99: System boot time in ns: 1735782997823610000, as datetime: 2025-01-02 01:56:37.823610 UTC
+   2025-01-02T03:53:28.145177Z  INFO main ThreadId(01) jheapusage: src/main.rs:119: report_gc_heap_summary_name: _ZNK8GCTracer22report_gc_heap_summaryEN6GCWhen4TypeERK13GCHeapSummary
+   2025-01-02T03:53:28.155553Z  INFO main ThreadId(01) jheapusage::ebpf: src/ebpf.rs:72: Attach BPF object
+   2025-01-02T03:53:28.175666Z  INFO main ThreadId(01) jheapusage::ebpf: src/ebpf.rs:80: Attached USDT hotspot:mem__pool__gc__begin to the process 37885. Link is Link { ptr: 0x57573a805bc0 }
+   2025-01-02T03:53:28.175726Z  INFO main ThreadId(01) jheapusage::ebpf: src/ebpf.rs:92: Attached USDT hotspot:mem__pool__gc__end to the process 37885. Link is Link { ptr: 0x57573a7f9610 }
+   2025-01-02T03:53:28.198632Z  INFO main ThreadId(01) jheapusage::ebpf: src/ebpf.rs:111: Attached UProbe to the process 37885. Link is Link { ptr: 0x57573a7f6890 }
+   2025-01-02T03:53:28.199042Z  INFO main ThreadId(01) jheapusage: src/main.rs:168: Built rg_send_gc_heap_summary_event RingBuffer { ptr: 0x57573a7f63f0, _cbs: [RingBufferCallback { cb: 0x57573a7faac0 }] }
+   2025-01-02T03:53:28.199463Z  INFO main ThreadId(01) jheapusage: src/main.rs:180: Built rg_hotspot_mem_pool_gc RingBuffer { ptr: 0x57573a803970, _cbs: [RingBufferCallback { cb: 0x57573a7eb2c0 }] }
+   2025-01-02T03:53:29.284641Z  INFO tokio-runtime-worker ThreadId(32) jheapusage::handlers: src/handlers.rs:35: Processed 0 events of type jheapusage::ebpf::jvm::imp::types::gc_heap_summary_event
+   2025-01-02T03:53:29.284660Z  INFO tokio-runtime-worker ThreadId(26) jheapusage::handlers: src/handlers.rs:35: Processed 0 events of type jheapusage::ebpf::jvm::imp::types::mem_pool_gc_event
+   2025-01-02T03:53:29.285917Z  INFO tokio-runtime-worker ThreadId(33) jheapusage::otlp: src/otlp.rs:48: 0 events were recorded to OTLP
+   2025-01-02T03:53:29.285920Z  INFO tokio-runtime-worker ThreadId(02) jheapusage::otlp: src/otlp.rs:117: 0 events were recorded to OTLP
+   2025-01-02T03:53:35.298938Z  INFO tokio-runtime-worker ThreadId(26) jheapusage::handlers: src/handlers.rs:35: Processed 50 events of type jheapusage::ebpf::jvm::imp::types::mem_pool_gc_event
+   2025-01-02T03:53:35.324006Z  INFO tokio-runtime-worker ThreadId(33) jheapusage::otlp: src/otlp.rs:117: 50 events were recorded to OTLP
+   2025-01-02T03:53:41.310079Z  INFO tokio-runtime-worker ThreadId(26) jheapusage::handlers: src/handlers.rs:35: Processed 100 events of type jheapusage::ebpf::jvm::imp::types::mem_pool_gc_event
+   2025-01-02T03:53:41.361932Z  INFO tokio-runtime-worker ThreadId(02) jheapusage::otlp: src/otlp.rs:117: 100 events were recorded to OTLP
+   2025-01-02T03:53:55.022270Z  INFO                 main ThreadId(01) jheapusage: src/main.rs:216: The process 37885 has exited with exit code 130
+   2025-01-02T03:53:55.022285Z  INFO                 main ThreadId(01) jheapusage: src/main.rs:206: Waiting for tasks to complete...
+   2025-01-02T03:53:55.035924Z  INFO                 main ThreadId(01) jheapusage: src/main.rs:209: Done
+   ```
+
+### Run under valgrind
+1. Install valgrind , `sudo apt-get install valgrind`
+2. Run it on `jheapusage`
+   ```shell
+   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 G_SLICE=always-malloc G_DEBUG=gc-friendly valgrind -v \
+     --tool=memcheck \
+     --track-origins=yes \
+     --leak-check=full \
+     --num-callers=100 \
+     --log-file=valgrind.log \
+     target/release/jheapusage --pid 59258#PID#
+   ```
+3. Analyze `valgrind.log`, the following errors **should not be in the log**, more [Understanding Valgrind Error Messages](https://cs3157.github.io/www/2022-9/guides/valgrind.html)
+   - Invalid reads
+   - Invalid writes
+   - Conditional jumps and moves that depend on uninitialized value(s)
+   - Segmentation faults (colloquially, “segfaults”)
+
+### Format C code
 ```shell
-sudo target/release/jheapusage --pid 58842
-2024-12-24T15:20:53.720855Z  INFO main ThreadId(01) jheapusage: src/main.rs:76: Received args: AppArgs { pid: 58842, verbose: false }
-2024-12-24T15:20:53.738050Z  INFO main ThreadId(01) jheapusage: src/main.rs:115: Attached USDT hotspot:mem__pool__gc__end to the process 58842. Link is Link { ptr: 0x62ddcbe099e0 }
-2024-12-24T15:20:53.738325Z  INFO main ThreadId(01) jheapusage: src/main.rs:135: Built RingBuffer RingBuffer { ptr: 0x62ddcbe19160, _cbs: [RingBufferCallback { cb: 0x1 }] }
-Received 176 bytes, the payload: { ts: 6936494667278, pid: 58842, manager: G1 Young Generation, pool: CodeHeap 'non-nmethods', used: 1375488, committed: 2555904, max_size: Some(8196096) }
-Received 176 bytes, the payload: { ts: 6936494672508, pid: 58842, manager: G1 Young Generation, pool: CodeHeap 'profiled nmethods', used: 201344, committed: 2555904, max_size: Some(121729024) }
-Received 176 bytes, the payload: { ts: 6936494672868, pid: 58842, manager: G1 Young Generation, pool: CodeHeap 'non-profiled nmethods', used: 68864, committed: 2555904, max_size: Some(121733120) }
-Received 176 bytes, the payload: { ts: 6936494673248, pid: 58842, manager: G1 Young Generation, pool: Metaspace, used: 459376, committed: 655360, max_size: None }
-Received 176 bytes, the payload: { ts: 6936494673568, pid: 58842, manager: G1 Young Generation, pool: Compressed Class Space, used: 29872, committed: 131072, max_size: Some(1073741824) }
-Received 176 bytes, the payload: { ts: 6936494673938, pid: 58842, manager: G1 Young Generation, pool: G1 Eden Space, used: 0, committed: 123731968, max_size: None }
-Received 176 bytes, the payload: { ts: 6936494674248, pid: 58842, manager: G1 Young Generation, pool: G1 Survivor Space, used: 0, committed: 0, max_size: None }
-Received 176 bytes, the payload: { ts: 6936494674528, pid: 58842, manager: G1 Young Generation, pool: G1 Old Gen, used: 285458216, committed: 295698432, max_size: Some(419430400) }
-Received 176 bytes, the payload: { ts: 6936494773859, pid: 58842, manager: G1 Young Generation, pool: CodeHeap 'non-nmethods', used: 1375488, committed: 2555904, max_size: Some(8196096) }
-Received 176 bytes, the payload: { ts: 6936494775049, pid: 58842, manager: G1 Young Generation, pool: CodeHeap 'profiled nmethods', used: 201344, committed: 2555904, max_size: Some(121729024) }
-Received 176 bytes, the payload: { ts: 6936494775369, pid: 58842, manager: G1 Young Generation, pool: CodeHeap 'non-profiled nmethods', used: 68864, committed: 2555904, max_size: Some(121733120) }
-Received 176 bytes, the payload: { ts: 6936494775669, pid: 58842, manager: G1 Young Generation, pool: Metaspace, used: 459376, committed: 655360, max_size: None }
-Received 176 bytes, the payload: { ts: 6936494775929, pid: 58842, manager: G1 Young Generation, pool: Compressed Class Space, used: 29872, committed: 131072, max_size: Some(1073741824) }
-Received 176 bytes, the payload: { ts: 6936494776199, pid: 58842, manager: G1 Young Generation, pool: G1 Eden Space, used: 0, committed: 117440512, max_size: None }
-Received 176 bytes, the payload: { ts: 6936494776479, pid: 58842, manager: G1 Young Generation, pool: G1 Survivor Space, used: 0, committed: 0, max_size: None }
-...
-Received 176 bytes, the payload: { ts: 7037902916377, pid: 58842, manager: G1 Young Generation, pool: G1 Survivor Space, used: 0, committed: 0, max_size: None }
-Received 176 bytes, the payload: { ts: 7037902916667, pid: 58842, manager: G1 Young Generation, pool: G1 Old Gen, used: 96715248, committed: 155189248, max_size: Some(419430400) }
-2024-12-24T15:22:36.388054Z  INFO main ThreadId(01) jheapusage: src/main.rs:140: The process 58842 has exited with exit code 130
+clang-format --style=file:src/ebpf/.clang-format -i src/ebpf/*
 ```
 ## **License**
 

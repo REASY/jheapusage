@@ -1,25 +1,23 @@
 import java.util.concurrent.ThreadLocalRandom;
 
 public class InfiniteApp {
-    public static void main(String[] args) { 
-        // Print a message to indicate the app is running
+    public static void main(String[] args) {
+        System.out.println("Runtime is: " + Runtime.version());
         System.out.println("The application is running. Press Ctrl+C to stop. Process Id: " + ProcessHandle.current().pid());
         long[] buffer = null;
-        // Infinite loop
-        while (true) { 
+        while (true) {
             try {
                 int nextSize = ThreadLocalRandom.current().nextInt(10000000, 20000000);
                 buffer = new long[nextSize];
-                // Sleep for a while to prevent high CPU usage 
-                Thread.sleep(2000); // Sleep for 2 second
-                System.out.println("buffer is " + buffer.length);
+                Thread.sleep(2000);
+                if (nextSize % 123456 == 0) {
+                    System.out.println("buffer lenght: " + buffer.length);
+                }
             } catch (InterruptedException e) {
-                // Handle exception if the thread is interrupted 
-                System.out.println("Thread was interrupted: " + e.getMessage()); 
-                break; // Exit the loop if interrupted 
+                System.out.println("Thread was interrupted: " + e.getMessage());
+                break;
             }
         } 
- 
-        System.out.println("Application has stopped."); 
+        System.out.println("Application has stopped.");
     } 
 } 

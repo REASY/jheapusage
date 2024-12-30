@@ -19,6 +19,8 @@ pub enum ErrorKind {
     FuncNotFoundError(String),
     #[error("ObjectError: {0}")]
     ObjectError(#[from] object::read::Error),
+    #[error("JoinError: {0}")]
+    JoinError(#[from] tokio::task::JoinError),
 }
 
 impl<E> From<E> for AppError
