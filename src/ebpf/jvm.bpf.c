@@ -57,6 +57,17 @@ SEC("uprobe")
 int BPF_UPROBE(send_gc_heap_summary_event, void *clazz,
 	       enum gc_when_type_enum when, struct gc_heap_summary *hs)
 {
+	char command[TASK_COMM_LEN];
+	__builtin_memset(command, 0, sizeof(command));
+	bpf_get_current_comm(command, sizeof(command));
+	const char g1_main_maker_thread_name[] = "G1 Main Marker";
+	if (__builtin_memcmp(command, g1_main_maker_thread_name,
+			     sizeof(g1_main_maker_thread_name)) == 0) {
+		bpf_printk("send_gc_heap_summary_event: Skipping event from %s",
+			   command);
+		return 0;
+	}
+
 	__u64 pid_tgid = bpf_get_current_pid_tgid();
 	pid_t userspace_pid, userspace_tid;
 	extract_userspace_ids(pid_tgid, &userspace_pid, &userspace_tid);
@@ -77,9 +88,6 @@ int BPF_UPROBE(send_gc_heap_summary_event, void *clazz,
 			"send_gc_heap_summary_event: bpf_probe_read_user hs failed: %d",
 			ret);
 	};
-	char command[TASK_COMM_LEN];
-	__builtin_memset(command, 0, sizeof(command));
-	bpf_get_current_comm(command, sizeof(command));
 
 	if (when == BeforeGC) {
 		bpf_printk(
