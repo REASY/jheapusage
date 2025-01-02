@@ -31,7 +31,7 @@ impl<T: Plain + std::fmt::Display + Clone> RingBufferCallbackHandler for Generic
         );
         self.job_queue.push(event.clone());
 
-        if self.processed % 50 == 0 {
+        if self.processed > 0 && self.processed % 50 == 0 {
             info!(
                 "Processed {} events of type {}",
                 self.processed,

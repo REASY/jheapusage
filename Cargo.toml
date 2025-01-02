@@ -14,6 +14,7 @@ libc = "0.2"
 object = "0.36.7"
 opentelemetry = "0.27.1"
 opentelemetry-otlp = {  version = "0.27.0", features = ["http-json", "hyper-client"] }
+opentelemetry-semantic-conventions = { version = "0.27", features = ["semconv_experimental"] }
 opentelemetry_sdk = { version = "0.27.1", features = ["rt-tokio"] }
 plain = "0.2"
 thiserror = "2"

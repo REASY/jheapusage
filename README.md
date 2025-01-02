@@ -63,35 +63,37 @@ Options:
 ```
 
 ### Example of run with [InfiniteApp.java](InfiniteApp.java)
-1. Compile and run `javac InfiniteApp.java && java -Xmx400M InfiniteApp`
+1. Compile and run `javac InfiniteApp.java && java -Xmx500M InfiniteApp`
    ```shell
    javac InfiniteApp.java && java -Xmx500M InfiniteApp
    Runtime is: 21.0.5+11-LTS
    The application is running. Press Ctrl+C to stop. Process Id: 37885
    ```
-2. Use the process id from above with `jheapusage`: `sudo target/release/jheapusage --pid 58842`
+2. Use the process id from above with `jheapusage`: `sudo target/release/jheapusage --pid 37885`
    ```shell
    sudo OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 target/release/jheapusage --pid 37885           
-   2025-01-02T03:53:28.138179Z  INFO main ThreadId(01) jheapusage: src/main.rs:97: Received args: AppArgs { pid: 37885, verbose: false }
-   2025-01-02T03:53:28.138193Z  INFO main ThreadId(01) jheapusage: src/main.rs:99: System boot time in ns: 1735782997823610000, as datetime: 2025-01-02 01:56:37.823610 UTC
-   2025-01-02T03:53:28.145177Z  INFO main ThreadId(01) jheapusage: src/main.rs:119: report_gc_heap_summary_name: _ZNK8GCTracer22report_gc_heap_summaryEN6GCWhen4TypeERK13GCHeapSummary
-   2025-01-02T03:53:28.155553Z  INFO main ThreadId(01) jheapusage::ebpf: src/ebpf.rs:72: Attach BPF object
-   2025-01-02T03:53:28.175666Z  INFO main ThreadId(01) jheapusage::ebpf: src/ebpf.rs:80: Attached USDT hotspot:mem__pool__gc__begin to the process 37885. Link is Link { ptr: 0x57573a805bc0 }
-   2025-01-02T03:53:28.175726Z  INFO main ThreadId(01) jheapusage::ebpf: src/ebpf.rs:92: Attached USDT hotspot:mem__pool__gc__end to the process 37885. Link is Link { ptr: 0x57573a7f9610 }
-   2025-01-02T03:53:28.198632Z  INFO main ThreadId(01) jheapusage::ebpf: src/ebpf.rs:111: Attached UProbe to the process 37885. Link is Link { ptr: 0x57573a7f6890 }
-   2025-01-02T03:53:28.199042Z  INFO main ThreadId(01) jheapusage: src/main.rs:168: Built rg_send_gc_heap_summary_event RingBuffer { ptr: 0x57573a7f63f0, _cbs: [RingBufferCallback { cb: 0x57573a7faac0 }] }
-   2025-01-02T03:53:28.199463Z  INFO main ThreadId(01) jheapusage: src/main.rs:180: Built rg_hotspot_mem_pool_gc RingBuffer { ptr: 0x57573a803970, _cbs: [RingBufferCallback { cb: 0x57573a7eb2c0 }] }
-   2025-01-02T03:53:29.284641Z  INFO tokio-runtime-worker ThreadId(32) jheapusage::handlers: src/handlers.rs:35: Processed 0 events of type jheapusage::ebpf::jvm::imp::types::gc_heap_summary_event
-   2025-01-02T03:53:29.284660Z  INFO tokio-runtime-worker ThreadId(26) jheapusage::handlers: src/handlers.rs:35: Processed 0 events of type jheapusage::ebpf::jvm::imp::types::mem_pool_gc_event
-   2025-01-02T03:53:29.285917Z  INFO tokio-runtime-worker ThreadId(33) jheapusage::otlp: src/otlp.rs:48: 0 events were recorded to OTLP
-   2025-01-02T03:53:29.285920Z  INFO tokio-runtime-worker ThreadId(02) jheapusage::otlp: src/otlp.rs:117: 0 events were recorded to OTLP
-   2025-01-02T03:53:35.298938Z  INFO tokio-runtime-worker ThreadId(26) jheapusage::handlers: src/handlers.rs:35: Processed 50 events of type jheapusage::ebpf::jvm::imp::types::mem_pool_gc_event
-   2025-01-02T03:53:35.324006Z  INFO tokio-runtime-worker ThreadId(33) jheapusage::otlp: src/otlp.rs:117: 50 events were recorded to OTLP
-   2025-01-02T03:53:41.310079Z  INFO tokio-runtime-worker ThreadId(26) jheapusage::handlers: src/handlers.rs:35: Processed 100 events of type jheapusage::ebpf::jvm::imp::types::mem_pool_gc_event
-   2025-01-02T03:53:41.361932Z  INFO tokio-runtime-worker ThreadId(02) jheapusage::otlp: src/otlp.rs:117: 100 events were recorded to OTLP
-   2025-01-02T03:53:55.022270Z  INFO                 main ThreadId(01) jheapusage: src/main.rs:216: The process 37885 has exited with exit code 130
-   2025-01-02T03:53:55.022285Z  INFO                 main ThreadId(01) jheapusage: src/main.rs:206: Waiting for tasks to complete...
-   2025-01-02T03:53:55.035924Z  INFO                 main ThreadId(01) jheapusage: src/main.rs:209: Done
+   2025-01-02T07:55:24.780259Z  INFO main ThreadId(01) jheapusage: src/main.rs:97: Received args: AppArgs { pid: 103680, verbose: false }
+   2025-01-02T07:55:24.780275Z  INFO main ThreadId(01) jheapusage: src/main.rs:99: System boot time in ns: 1735782997823610000, as datetime: 2025-01-02 01:56:37.823610 UTC
+   2025-01-02T07:55:24.787120Z  INFO main ThreadId(01) jheapusage: src/main.rs:119: report_gc_heap_summary_name: _ZNK8GCTracer22report_gc_heap_summaryEN6GCWhen4TypeERK13GCHeapSummary
+   2025-01-02T07:55:24.797382Z  INFO main ThreadId(01) jheapusage::ebpf: src/ebpf.rs:72: Attach BPF object
+   2025-01-02T07:55:24.814656Z  INFO main ThreadId(01) jheapusage::ebpf: src/ebpf.rs:80: Attached USDT hotspot:mem__pool__gc__begin to the process 103680. Link is Link { ptr: 0x5ee97b3edba0 }
+   2025-01-02T07:55:24.814712Z  INFO main ThreadId(01) jheapusage::ebpf: src/ebpf.rs:92: Attached USDT hotspot:mem__pool__gc__end to the process 103680. Link is Link { ptr: 0x5ee97b378a40 }
+   2025-01-02T07:55:24.815503Z  INFO main ThreadId(01) jheapusage::ebpf: src/ebpf.rs:111: Attached UProbe to the process 103680. Link is Link { ptr: 0x5ee97b3e75f0 }
+   2025-01-02T07:55:24.815988Z  INFO main ThreadId(01) jheapusage: src/main.rs:168: Built rg_send_gc_heap_summary_event RingBuffer { ptr: 0x5ee97b3eb720, _cbs: [RingBufferCallback { cb: 0x5ee97b3ebb10 }] }
+   2025-01-02T07:55:24.816704Z  INFO main ThreadId(01) jheapusage: src/main.rs:180: Built rg_hotspot_mem_pool_gc RingBuffer { ptr: 0x5ee97b3ebe60, _cbs: [RingBufferCallback { cb: 0x5ee97b3ebe20 }] }
+   ...
+   2025-01-02T07:56:15.910340Z  INFO tokio-runtime-worker ThreadId(31) jheapusage::handlers: src/handlers.rs:35: Processed 50 events of type jheapusage::ebpf::jvm::imp::types::gc_heap_summary_event
+   2025-01-02T07:56:15.913705Z  INFO tokio-runtime-worker ThreadId(30) jheapusage::otlp: src/otlp.rs:67: 50 events were recorded to OTLP
+   2025-01-02T07:56:15.913714Z  INFO tokio-runtime-worker ThreadId(25) jheapusage::otlp: src/otlp.rs:131: 400 events were recorded to OTLP
+   2025-01-02T07:56:21.922315Z  INFO tokio-runtime-worker ThreadId(03) jheapusage::handlers: src/handlers.rs:35: Processed 450 events of type jheapusage::ebpf::jvm::imp::types::mem_pool_gc_event
+   2025-01-02T07:56:21.950469Z  INFO tokio-runtime-worker ThreadId(22) jheapusage::otlp: src/otlp.rs:131: 450 events were recorded to OTLP
+   2025-01-02T07:56:27.932491Z  INFO tokio-runtime-worker ThreadId(03) jheapusage::handlers: src/handlers.rs:35: Processed 500 events of type jheapusage::ebpf::jvm::imp::types::mem_pool_gc_event
+   2025-01-02T07:56:27.977579Z  INFO tokio-runtime-worker ThreadId(22) jheapusage::otlp: src/otlp.rs:131: 500 events were recorded to OTLP
+   2025-01-02T07:56:33.945204Z  INFO tokio-runtime-worker ThreadId(03) jheapusage::handlers: src/handlers.rs:35: Processed 550 events of type jheapusage::ebpf::jvm::imp::types::mem_pool_gc_event
+   2025-01-02T07:56:34.018606Z  INFO tokio-runtime-worker ThreadId(30) jheapusage::otlp: src/otlp.rs:131: 550 events were recorded to OTLP
+   2025-01-02T07:56:37.167495Z  INFO                 main ThreadId(01) jheapusage: src/main.rs:216: The process 103680 has exited with exit code 130
+   2025-01-02T07:56:37.167509Z  INFO                 main ThreadId(01) jheapusage: src/main.rs:206: Waiting for tasks to complete...
+   2025-01-02T07:56:37.253469Z  INFO                 main ThreadId(01) jheapusage: src/main.rs:209: Done
    ```
 
 ### Run under valgrind

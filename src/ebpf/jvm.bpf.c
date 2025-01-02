@@ -60,6 +60,8 @@ int BPF_UPROBE(send_gc_heap_summary_event, void *clazz,
 	char command[TASK_COMM_LEN];
 	__builtin_memset(command, 0, sizeof(command));
 	bpf_get_current_comm(command, sizeof(command));
+
+	// https://github.com/openjdk/jdk/blob/jdk-11%2B28/src/hotspot/share/gc/g1/g1ConcurrentMarkThread.cpp#L87
 	const char g1_main_maker_thread_name[] = "G1 Main Marker";
 	if (__builtin_memcmp(command, g1_main_maker_thread_name,
 			     sizeof(g1_main_maker_thread_name)) == 0) {

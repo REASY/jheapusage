@@ -9,25 +9,44 @@ use opentelemetry_sdk::resource::{
     EnvResourceDetector, ResourceDetector, SdkProvidedResourceDetector, TelemetryResourceDetector,
 };
 use opentelemetry_sdk::{runtime, Resource};
+use opentelemetry_semantic_conventions::attribute::{HOST_ARCH, JVM_MEMORY_POOL_NAME, OS_NAME};
+use opentelemetry_semantic_conventions::metric::{
+    JVM_MEMORY_COMMITTED, JVM_MEMORY_INIT, JVM_MEMORY_LIMIT, JVM_MEMORY_USED,
+};
+use opentelemetry_semantic_conventions::resource;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{debug, info};
 
+const JVM_MEMORY_STATE: &'static str = "jvm.memory.state";
+const JVM_MEMORY_MANAGER_NAME: &'static str = "jvm.memory.manager.name";
+
+fn get_scope() -> InstrumentationScope {
+    InstrumentationScope::builder("jheapusage")
+        .with_version(env!("CARGO_PKG_VERSION"))
+        .with_schema_url("1.0")
+        .with_attributes(vec![
+            KeyValue::new(OS_NAME, std::env::consts::OS),
+            KeyValue::new(HOST_ARCH, std::env::consts::ARCH),
+        ])
+        .build()
+}
+
+fn as_runtime(name: &str) -> String {
+    format!("runtime.{}", name)
+}
+
 pub async fn process_as_otlp_gc_heap_summary_event(
     queue: Arc<JobQueue<gc_heap_summary_event>>,
     should_stop: Arc<AtomicBool>,
 ) {
     let mut processed: usize = 0;
-    let common_scope_attributes = vec![KeyValue::new("scope-key", "scope-value")];
-    let scope = InstrumentationScope::builder("basic")
-        .with_version("1.0")
-        .with_attributes(common_scope_attributes)
-        .build();
+    let scope = get_scope();
     let meter = global::meter_with_scope(scope);
     let used_gauge = meter
-        .u64_gauge("runtime.java.total.memory.used")
+        .u64_gauge(as_runtime("jvm.memory.total.used"))
         .with_unit("By")
         .with_description("The total amount of Heap memory currently used by JVM")
         .build();
@@ -41,10 +60,10 @@ pub async fn process_as_otlp_gc_heap_summary_event(
                     gc_when_type_enum::AfterGC => "AfterGC",
                     GCWhenEndSentinel => "GCWhenEndSentinel",
                 };
-                let tags = [KeyValue::new("state", state)];
+                let tags = [KeyValue::new(JVM_MEMORY_STATE, state)];
                 used_gauge.record(event.used, &tags);
                 debug!("Handled `gc_heap_summary_event` {}", event);
-                if processed % 50 == 0 {
+                if processed > 0 && processed % 50 == 0 {
                     info!("{} events were recorded to OTLP", processed);
                 }
                 processed += 1;
@@ -59,33 +78,28 @@ pub async fn process_as_otlp_mem_pool_gc_event(
     should_stop: Arc<AtomicBool>,
 ) {
     let mut processed: usize = 0;
-    let common_scope_attributes = vec![KeyValue::new("scope-key", "scope-value")];
-    let scope = InstrumentationScope::builder("basic")
-        .with_version("1.0")
-        .with_attributes(common_scope_attributes)
-        .build();
+    let scope = get_scope();
     let meter = global::meter_with_scope(scope);
-
     // https://github.com/openjdk/jdk/blob/6c59185475eeca83153f085eba27cc0b3acf9bb4/src/hotspot/share/services/memoryUsage.hpp#L30-L46
     let init_size_gauge = meter
-        .u64_gauge("runtime.java.memory.init_size")
+        .u64_gauge(as_runtime(JVM_MEMORY_INIT))
         .with_unit("By")
         .with_description("The initial amount of memory the JVM requests from the OS")
         .build();
     let used_gauge = meter
-        .u64_gauge("runtime.java.memory.used")
+        .u64_gauge(as_runtime(JVM_MEMORY_USED))
         .with_unit("By")
         .with_description("The amount of memory currently used")
         .build();
     let committed_gauge = meter
-        .u64_gauge("runtime.java.memory.committed")
+        .u64_gauge(as_runtime(JVM_MEMORY_COMMITTED))
         .with_unit("By")
         .with_description(
             "The amount of memory that is guaranteed to be available for use by the JVM",
         )
         .build();
     let max_size_gauge = meter
-        .u64_gauge("runtime.java.memory.max_size")
+        .u64_gauge(as_runtime(JVM_MEMORY_LIMIT))
         .with_unit("By")
         .with_description("The maximum amount of memory that can be used for memory management")
         .build();
@@ -102,9 +116,9 @@ pub async fn process_as_otlp_mem_pool_gc_event(
                     "AfterGC"
                 };
                 let tags = [
-                    KeyValue::new("manager", manager),
-                    KeyValue::new("pool", pool),
-                    KeyValue::new("state", state),
+                    KeyValue::new(JVM_MEMORY_MANAGER_NAME, manager),
+                    KeyValue::new(JVM_MEMORY_POOL_NAME, pool),
+                    KeyValue::new(JVM_MEMORY_STATE, state),
                 ];
                 used_gauge.record(event.used, &tags);
                 init_size_gauge.record(event.init_size, &tags);
@@ -113,7 +127,7 @@ pub async fn process_as_otlp_mem_pool_gc_event(
                     max_size_gauge.record(event.max_size, &tags);
                 }
                 debug!("Handled `mem_pool_gc_event` {}", event);
-                if processed % 50 == 0 {
+                if processed > 0 && processed % 50 == 0 {
                     info!("{} events were recorded to OTLP", processed);
                 }
                 processed += 1;
@@ -129,7 +143,6 @@ pub fn init_metrics(protocol: Protocol) -> crate::errors::Result<SdkMeterProvide
         .with_protocol(protocol)
         .with_temporality(Temporality::default())
         .build()?;
-    const SERVICE_NAME: &str = "service.name";
     let reader = opentelemetry_sdk::metrics::PeriodicReader::builder(exporter, runtime::Tokio)
         .with_interval(Duration::from_millis(500))
         .build();
@@ -140,7 +153,7 @@ pub fn init_metrics(protocol: Protocol) -> crate::errors::Result<SdkMeterProvide
         Box::new(EnvResourceDetector::new()),
     ];
     let resource = Resource::from_detectors(Duration::from_secs(5), detectors).merge(
-        &Resource::new_with_defaults([KeyValue::new(SERVICE_NAME, "jheapusage")]),
+        &Resource::new_with_defaults([KeyValue::new(resource::SERVICE_NAME, "jheapusage")]),
     );
     Ok(SdkMeterProvider::builder()
         .with_resource(resource)
