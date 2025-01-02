@@ -1,0 +1,217 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 2,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "webstore-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": true,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "fieldMinMax": true,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 19,
+        "w": 19,
+        "x": 0,
+        "y": 0
+      },
+      "id": 4,
+      "interval": "10",
+      "options": {
+        "legend": {
+          "calcs": [
+            "max",
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortBy": "Name",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "webstore-metrics"
+          },
+          "disableTextWrap": false,
+          "editorMode": "code",
+          "expr": "runtime_jvm_memory_total_used_bytes{service_name=\"jheapusage\", jvm_memory_state=\"BeforeGC\"}\nunless (time() - timestamp(runtime_jvm_memory_total_used_bytes{service_name=\"jheapusage\", jvm_memory_state=\"BeforeGC\"}) > 10)",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "legendFormat": "eBPF: gc_heap_summary_event BeforeGC",
+          "range": true,
+          "refId": "A",
+          "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "webstore-metrics"
+          },
+          "disableTextWrap": false,
+          "editorMode": "code",
+          "expr": "runtime_jvm_memory_total_used_bytes{service_name=\"jheapusage\", jvm_memory_state=\"AfterGC\"}\nunless (time() - timestamp(runtime_jvm_memory_total_used_bytes{service_name=\"jheapusage\", jvm_memory_state=\"AfterGC\"}) > 10)",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "legendFormat": "eBPF: gc_heap_summary_event AfterGC",
+          "range": true,
+          "refId": "B",
+          "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "webstore-metrics"
+          },
+          "disableTextWrap": false,
+          "editorMode": "code",
+          "expr": "sum(max by(jvm_memory_manager_name) ((runtime_jvm_memory_used_bytes{jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\", jvm_memory_state=\"BeforeGC\"})\nunless (time() - timestamp(runtime_jvm_memory_used_bytes{jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\", jvm_memory_state=\"BeforeGC\"}) > 10)))",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "legendFormat": "eBPF: mem_pool_gc_event  BeforeGC",
+          "range": true,
+          "refId": "C",
+          "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "webstore-metrics"
+          },
+          "disableTextWrap": false,
+          "editorMode": "code",
+          "expr": "sum(max by(jvm_memory_manager_name) ((runtime_jvm_memory_used_bytes{jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\", jvm_memory_state=\"AfterGC\"})\nunless (time() - timestamp(runtime_jvm_memory_used_bytes{jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\", jvm_memory_state=\"AfterGC\"}) > 10)))",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "legendFormat": "eBPF: mem_pool_gc_event  AfterGC",
+          "range": true,
+          "refId": "D",
+          "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "webstore-metrics"
+          },
+          "disableTextWrap": false,
+          "editorMode": "code",
+          "expr": "sum((jvm_memory_used_bytes{jvm_memory_type=\"heap\", jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\"})\nunless (time() - timestamp(jvm_memory_used_bytes{jvm_memory_type=\"heap\", jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\"}) > 10))",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "OpenTelemetry JavaAgent",
+          "range": true,
+          "refId": "E",
+          "useBackend": false
+        }
+      ],
+      "title": "Used Total Java Heap Memory",
+      "type": "timeseries"
+    }
+  ],
+  "preload": false,
+  "refresh": "5s",
+  "schemaVersion": 40,
+  "tags": [],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Java Memory: ePBF vs OpenTelemetry",
+  "uid": "be8rabb3wy680a",
+  "version": 1,
+  "weekStart": ""
+}

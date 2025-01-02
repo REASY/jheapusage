@@ -11,11 +11,17 @@ The project requires the following tools configured on your developer machine:
 - Installed Java, you can use [SDKMAN!](https://sdkman.io/) to get Java 21
 
 ### Install Dependencies
+
 On Ubuntu/Debian, you need:
+
 ```shell
 sudo apt update
-sudo apt-get install -y --no-install-recommends clang-format build-essential make llvm clang libelf1 libelf-dev zlib1g-dev
+sudo apt-get install -y --no-install-recommends clang-format build-essential make libelf1 libelf-dev zlib1g-dev pkg-config
 ```
+
+Then install Clang version >= 15. One can
+use [Automatic installation script](https://apt.llvm.org/#:~:text=flang%20packages%20added-,Automatic%20installation%20script,-For%20convenience%20there)
+for that.
 
 ### Build the project
 
@@ -25,9 +31,34 @@ To build the project, run the following command:
 cargo build --release
 ```
 
+### Docker
+
+Run `docker build --build-arg BUILD_DATE="$(date --rfc-3339=seconds)" -t jheapusage:dev docker/dev ` in the root folder
+to build dev docker image
+
+```shell
+docker build --build-arg BUILD_DATE="$(date --rfc-3339=seconds)" -t jheapusage:dev docker/dev 
+[+] Building 64.0s (8/8) FINISHED                                                                                                                                                             docker:default
+ => [internal] load build definition from Dockerfile                                                                                                                                                    0.0s
+ => => transferring dockerfile: 1.68kB                                                                                                                                                                  0.0s
+ => [internal] load metadata for docker.io/library/ubuntu:22.04                                                                                                                                         0.8s
+ => [internal] load .dockerignore                                                                                                                                                                       0.0s
+ => => transferring context: 2B                                                                                                                                                                         0.0s
+ => CACHED [1/4] FROM docker.io/library/ubuntu:22.04@sha256:0e5e4a57c2499249aafc3b40fcd541e9a456aab7296681a3994d631587203f97                                                                            0.0s
+ => [2/4] RUN apt-get update -y &&     apt-get install -y --no-install-recommends       curl ca-certificates lsb-release wget software-properties-common gnupg clang-format       build-essential mak  29.5s
+ => [3/4] RUN curl -O https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && ./llvm.sh 17 && rm -rf llvm.sh                                                                                               23.7s 
+ => [4/4] RUN curl https://sh.rustup.rs -sSf | sh -s -- -y  && rustup --version                           && cargo --version                            && rustc --version                              8.1s 
+ => exporting to image                                                                                                                                                                                  1.9s 
+ => => exporting layers                                                                                                                                                                                 1.9s 
+ => => writing image sha256:d60298440dad99fdc0ec86a9b81c876e469d7c55d0bdaf2bbc25a78dc6e577eb                                                                                                            0.0s 
+ => => naming to docker.io/library/jheapusage:dev 
+```
+
 ### Known issues
 
-I had to add [build.rs](build.rs) extra include path `/usr/include/x86_64-linux-gnu` on my Ubuntu 24.10 with kernel 6.11.0-13-generic otherwise I was getting the error
+I had to add [build.rs](build.rs) extra include path `/usr/include/x86_64-linux-gnu` on my Ubuntu 24.10 with kernel
+6.11.0-13-generic otherwise I was getting the error
+
 ```
 Caused by:
   process didn't exit successfully: `/home/user/github/REASY/jheapusage/target/debug/build/jheapusage-f45cdd62dad4e982/build-script-build` (exit status: 101)
@@ -49,7 +80,9 @@ Caused by:
 This will compile your code and create the necessary binaries.
 
 ## How to run `jheapusage`
+
 Note: you need to use `sudo`, provide `--help` to get help on how to run it.
+
 ```shell
 sudo target/release/jheapusage --help
 Prints heap usage of a running Java program
@@ -63,6 +96,7 @@ Options:
 ```
 
 ### Example of run with [InfiniteApp.java](InfiniteApp.java)
+
 1. Compile and run `javac InfiniteApp.java && java -Xmx500M InfiniteApp`
    ```shell
    javac InfiniteApp.java && java -Xmx500M InfiniteApp
@@ -97,6 +131,7 @@ Options:
    ```
 
 ### Run under valgrind
+
 1. Install valgrind , `sudo apt-get install valgrind`
 2. Run it on `jheapusage`
    ```shell
@@ -108,16 +143,19 @@ Options:
      --log-file=valgrind.log \
      target/release/jheapusage --pid 59258#PID#
    ```
-3. Analyze `valgrind.log`, the following errors **should not be in the log**, more [Understanding Valgrind Error Messages](https://cs3157.github.io/www/2022-9/guides/valgrind.html)
-   - Invalid reads
-   - Invalid writes
-   - Conditional jumps and moves that depend on uninitialized value(s)
-   - Segmentation faults (colloquially, “segfaults”)
+3. Analyze `valgrind.log`, the following errors **should not be in the log**,
+   more [Understanding Valgrind Error Messages](https://cs3157.github.io/www/2022-9/guides/valgrind.html)
+    - Invalid reads
+    - Invalid writes
+    - Conditional jumps and moves that depend on uninitialized value(s)
+    - Segmentation faults (colloquially, “segfaults”)
 
 ### Format C code
+
 ```shell
 clang-format --style=file:src/ebpf/.clang-format -i src/ebpf/*
 ```
+
 ## **License**
 
 This project is licensed under the MIT License. See the **[LICENSE](LICENSE)** file for more information.
