@@ -23,10 +23,11 @@ impl std::fmt::Display for mem_pool_gc_event {
         };
         write!(
             f,
-            "[{}] ts: {}, pid: {}, manager: {}, pool: {}, used: {}, committed: {}, max_size: {:?}",
+            "[{}] ts: {}, global_pid: {}, ns_pid: {}, manager: {}, pool: {}, used: {}, committed: {}, max_size: {:?}",
             state,
             unix_timestamp_ns_to_datetime(self.ts as i64),
-            self.pid,
+            self.global_pid,
+            self.ns_pid,
             manager,
             pool,
             self.used,
@@ -43,10 +44,12 @@ impl std::fmt::Display for gc_heap_summary_event {
         let t = unsafe { self.gc_when_type.assume_init() };
         write!(
             f,
-            "ts: {}, pid: {}, tid: {}, type: {:?}, used: {}",
+            "ts: {}, global_pid: {}, global_tid: {}, ns_pid: {}, ns_tid: {}, type: {:?}, used: {}",
             unix_timestamp_ns_to_datetime(self.ts as i64),
-            self.pid,
-            self.tid,
+            self.global_pid,
+            self.global_tid,
+            self.ns_pid,
+            self.ns_tid,
             t,
             self.used,
         )?;

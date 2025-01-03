@@ -3,6 +3,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class InfiniteApp {
     public static void main(String[] args) {
         System.out.println("Runtime is: " + Runtime.version());
+        System.out.println("User: " + System.getProperty("user.name"));
         System.out.println("The application is running. Press Ctrl+C to stop. Process Id: " + ProcessHandle.current().pid());
         long[] buffer = null;
         while (true) {

@@ -1,17 +1,164 @@
 use crate::errors::ErrorKind::FuncNotFoundError;
 use crate::errors::{AppError, ErrorKind, Result};
 use chrono::{DateTime, Utc};
-use libc::{clock_gettime, timespec, CLOCK_BOOTTIME, CLOCK_REALTIME};
+use libc::{pid_t, timespec, uid_t};
+use nix::sys::time::{TimeSpec, TimeValLike};
+use nix::time::{clock_gettime, ClockId};
+use nix::unistd::User;
 use object::elf;
 use object::elf::STT_FUNC;
 use object::read::elf::{FileHeader, Sym};
+use serde::{Deserialize, Serialize};
 use std::ffi::CStr;
 use std::fs::File;
-use std::io::{BufRead, Read};
+use std::io::{BufRead, BufReader, Read};
 use std::num::ParseIntError;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::{fs, io};
 use tracing::{debug, warn};
+
+#[derive(Debug, Copy, Clone)]
+pub enum UserId {
+    #[allow(unused)]
+    Real(uid_t),
+    #[allow(unused)]
+    Effective(uid_t),
+    #[allow(unused)]
+    SavedSet(uid_t),
+    #[allow(unused)]
+    Filesystem(uid_t),
+}
+
+#[derive(Debug)]
+pub struct ProcessStatus {
+    pub uid: [UserId; 4],
+    pub tgid: pid_t,
+    pub ns_tgid: Vec<pid_t>,
+    pub ns_pid: Vec<pid_t>,
+    pub ns_pgid: Vec<pid_t>,
+    pub ns_sid: Vec<pid_t>,
+}
+
+impl ProcessStatus {
+    pub fn get_effective_uid(&self) -> uid_t {
+        self.uid
+            .iter()
+            .find_map(|d| match d {
+                UserId::Effective(pid) => Some(pid.clone()),
+                _ => None,
+            })
+            .unwrap()
+    }
+    pub fn of_process(pid: pid_t) -> Result<Self> {
+        let path = PathBuf::from(format!("/proc/{pid}/status"));
+        let f = File::open(path)?;
+        let mut rdr = BufReader::new(f);
+        let mut tgid: pid_t = 0;
+        let mut uid = [UserId::Real(0); 4];
+        let mut ns_tgid: Vec<pid_t> = Vec::new();
+        let mut ns_pid: Vec<pid_t> = Vec::new();
+        let mut ns_pgid: Vec<pid_t> = Vec::new();
+        let mut ns_sid: Vec<pid_t> = Vec::new();
+        loop {
+            let mut s: String = String::new();
+            let read = rdr.read_line(&mut s)?;
+            if read == 0 {
+                break;
+            }
+            let split: Vec<&str> = s.split(":\t").collect();
+            assert!(!split.is_empty());
+
+            fn get_values(value: &str) -> Vec<String> {
+                // `read_line` will read newline as well if it is there, remove if it was read
+                let value_no_new_line = value.replace('\n', "");
+                value_no_new_line
+                    .split('\t')
+                    .map(|s| s.to_owned())
+                    .collect()
+            }
+            fn get_as<T: FromStr>(value: &str) -> Result<Vec<T>>
+            where
+                ErrorKind: From<<T as FromStr>::Err>,
+            {
+                let xs = get_values(value);
+                let mut pids: Vec<T> = Vec::new();
+                assert!(!xs.is_empty());
+                for s in xs {
+                    let v = T::from_str(s.as_str())?;
+                    pids.push(v);
+                }
+                Ok(pids)
+            }
+
+            let key = split[0];
+            match key {
+                "Uid" => {
+                    let uids = get_as::<uid_t>(split[1])?;
+                    // https://man7.org/linux/man-pages/man5/proc_pid_status.5.html
+                    uid = [
+                        UserId::Real(uids[0]),
+                        UserId::Effective(uids[1]),
+                        UserId::SavedSet(uids[2]),
+                        UserId::Filesystem(uids[3]),
+                    ]
+                }
+                "Tgid" => {
+                    let v = get_values(split[1]);
+                    assert_eq!(1, v.len());
+                    tgid = pid_t::from_str(v[0].as_str())?;
+                }
+                "NStgid" => {
+                    ns_tgid = get_as(split[1])?;
+                }
+                "NSpid" => {
+                    ns_pid = get_as(split[1])?;
+                }
+                "NSpgid" => {
+                    ns_pgid = get_as(split[1])?;
+                }
+                "NSsid" => {
+                    ns_sid = get_as(split[1])?;
+                }
+                _ => {}
+            }
+        }
+
+        Ok(ProcessStatus {
+            uid,
+            tgid,
+            ns_tgid,
+            ns_pid,
+            ns_pgid,
+            ns_sid,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PasswdStruct {
+    pub name: String,
+    pub passwd: String,
+    pub uid: uid_t,
+    pub gid: uid_t,
+    pub gecos: String,
+    pub dir: String,
+    pub shell: String,
+}
+
+impl PasswdStruct {
+    pub fn from(user: User) -> PasswdStruct {
+        PasswdStruct {
+            name: user.name,
+            passwd: user.passwd.into_string().unwrap(),
+            uid: user.uid.as_raw(),
+            gid: user.gid.as_raw(),
+            gecos: user.gecos.into_string().unwrap(),
+            dir: user.dir.to_str().unwrap().to_owned(),
+            shell: user.shell.to_str().unwrap().to_owned(),
+        }
+    }
+}
 
 pub fn increase_memlock_rlimit() -> Result<()> {
     let rlimit = libc::rlimit {
@@ -27,8 +174,9 @@ pub fn increase_memlock_rlimit() -> Result<()> {
     Ok(())
 }
 
-pub fn find_loaded_library(pid: u32, library_name: &str) -> Result<Option<String>> {
+pub fn find_loaded_library(pid: pid_t, library_name: &str) -> Result<Option<String>> {
     let maps_path = format!("/proc/{}/maps", pid);
+    println!("maps_path: {}", maps_path);
     let file = fs::File::open(&maps_path)?;
     let reader = io::BufReader::new(file);
     for line in reader.lines() {
@@ -105,17 +253,30 @@ pub fn get_java_processes_as_jps(hs_perf_data_folder: &str) -> Vec<u32> {
 }
 
 /// Check whether the provided process id is a Java process.
-pub fn check_java_process(hs_perf_data_folder: &str, pid: u32) -> Result<()> {
+pub fn check_java_process(
+    pid: pid_t,
+    ns_tgid: Option<&pid_t>,
+    pwd_struct: PasswdStruct,
+) -> Result<()> {
     // Inspired by https://github.com/openjdk/jdk/blob/62a4544bb76aa339a8129f81d2527405a1b1e7e3/src/jdk.internal.jvmstat/share/classes/sun/jvmstat/perfdata/monitor/protocol/local/LocalVmManager.java#L77-L116
-    let hs_perf_path = Path::new(hs_perf_data_folder).join(pid.to_string());
+    let hs_perf_path = if let Some(ns_tgid) = ns_tgid {
+        format!(
+            "/proc/{}/root/tmp/hsperfdata_{}/{}",
+            pid, pwd_struct.name, ns_tgid
+        )
+    } else {
+        format!("/tmp/hsperfdata_{}/{}", pwd_struct.name, pid)
+    };
+
+    let hs_perf_path = Path::new(hs_perf_path.as_str());
     debug!(
         "Checking the existence of PerfDataFile at {:?} and enough permissions to read from it",
-        hs_perf_path.as_path()
+        hs_perf_path
     );
-    let mut f = File::open(hs_perf_path.clone())?;
+    let mut f = File::open(hs_perf_path)?;
     let mut buf: [u8; 64] = [0; 64];
     f.read(&mut buf)?;
-    debug!("PerfDataFile at {:?} is readable", hs_perf_path.as_path());
+    debug!("PerfDataFile at {:?} is readable", hs_perf_path);
     Ok(())
 }
 
@@ -129,36 +290,34 @@ pub fn estimate_system_boot_time<const ITERATIONS: usize>() -> Result<u64> {
     // to estimate the system's boot time with the least noise in Unix-epoch nanoseconds
 
     // Prepare arrays to store timespec for each iteration
-    let mut ts1 = [timespec {
+    let mut ts1 = [TimeSpec::from(timespec {
         tv_sec: 0,
         tv_nsec: 0,
-    }; ITERATIONS];
-    let mut ts2 = [timespec {
+    }); ITERATIONS];
+    let mut ts2 = [TimeSpec::from(timespec {
         tv_sec: 0,
         tv_nsec: 0,
-    }; ITERATIONS];
-    let mut ts3 = [timespec {
+    }); ITERATIONS];
+    let mut ts3 = [TimeSpec::from(timespec {
         tv_sec: 0,
         tv_nsec: 0,
-    }; ITERATIONS];
+    }); ITERATIONS];
 
     // In a tight loop capture timestamps from both clocks to analyze it later
     for i in 0..ITERATIONS {
-        unsafe {
-            clock_gettime(CLOCK_REALTIME, &mut ts1[i]);
-            clock_gettime(CLOCK_BOOTTIME, &mut ts2[i]);
-            clock_gettime(CLOCK_REALTIME, &mut ts3[i]);
-        }
+        ts1[i] = clock_gettime(ClockId::CLOCK_REALTIME)?;
+        ts2[i] = clock_gettime(ClockId::CLOCK_BOOTTIME)?;
+        ts3[i] = clock_gettime(ClockId::CLOCK_REALTIME)?;
     }
 
     // Find the smallest difference between two `CLOCK_REALTIME` readings.
     // That reading happened with the least overhead/noise so we can get a cleaner midpoint t4
     // that best represents the actual real time of the middle call to CLOCK_BOOTTIME.
-    let mut smallest_dt: u64 = 0;
+    let mut smallest_dt: i64 = 0;
     let mut smallest_dt_i: usize = 0;
     for i in 0..ITERATIONS {
-        let t1 = timespec_to_ns(&ts1[i]);
-        let t3 = timespec_to_ns(&ts3[i]);
+        let t1 = ts1[i].num_nanoseconds();
+        let t3 = ts3[i].num_nanoseconds();
         let dt = t3.saturating_sub(t1);
         if smallest_dt == 0 || dt < smallest_dt {
             smallest_dt = dt;
@@ -166,22 +325,15 @@ pub fn estimate_system_boot_time<const ITERATIONS: usize>() -> Result<u64> {
         }
     }
     // Least noisy readings
-    let t1 = timespec_to_ns(&ts1[smallest_dt_i]);
+    let t1 = &ts1[smallest_dt_i].num_nanoseconds();
     // Note that t2 is CLOCK_BOOTTIME that starts at zero when the kernel boots and increases steadily
-    let t2 = timespec_to_ns(&ts2[smallest_dt_i]);
-    let t3 = timespec_to_ns(&ts3[smallest_dt_i]);
+    let t2 = &ts2[smallest_dt_i].num_nanoseconds();
+    let t3 = &ts3[smallest_dt_i].num_nanoseconds();
     // Compute t4, that represents the best guess of the real time of the middle call to CLOCK_BOOTTIME.
     let t4 = (t1 + t3) / 2;
     // Subtract t2 from t4 to get an approximation of when the system started (i.e., the boot time) in Unix-epoch nanoseconds
-    let estimated_boot_time_in_ns = t4.saturating_sub(t2);
-    Ok(estimated_boot_time_in_ns)
-}
-
-/// Convert a `timespec` to nanoseconds as a `u64`.
-fn timespec_to_ns(ts: &timespec) -> u64 {
-    // tv_sec can be negative in theory if the timespec was derived from e.g. CLOCK_REALTIME way in the past,
-    // but typically for real-time and boottime, tv_sec >= 0. We'll cast safely to u64.
-    (ts.tv_sec as u64).saturating_mul(1_000_000_000) + (ts.tv_nsec as u64)
+    let estimated_boot_time_in_ns = t4.saturating_sub(*t2);
+    Ok(estimated_boot_time_in_ns as u64)
 }
 
 #[allow(unused)]

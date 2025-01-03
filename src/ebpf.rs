@@ -1,5 +1,6 @@
 use libbpf_rs::skel::{OpenSkel, Skel, SkelBuilder};
 use libbpf_rs::{Link, OpenObject, UprobeOpts};
+use libc::pid_t;
 use std::mem::{ManuallyDrop, MaybeUninit};
 use tracing::{debug, info};
 
@@ -64,7 +65,7 @@ impl Ebpf {
 
     pub fn setup(
         &mut self,
-        pid: u32,
+        pid: pid_t,
         libjvm_path: String,
         report_gc_heap_summary_name: String,
     ) -> errors::Result<()> {
@@ -72,7 +73,7 @@ impl Ebpf {
         info!("Attach BPF object");
 
         let link = self.jvm.progs.hotspot_mem_pool_gc_begin.attach_usdt(
-            pid as i32,
+            pid,
             libjvm_path.clone(),
             USDT_PROVIDER,
             USDT_MEM_POOL_GC_BEGIN,
@@ -84,7 +85,7 @@ impl Ebpf {
         self._links.push(link);
 
         let link = self.jvm.progs.hotspot_mem_pool_gc_end.attach_usdt(
-            pid as i32,
+            pid,
             libjvm_path.clone(),
             USDT_PROVIDER,
             USDT_MEM_POOL_GC_END,

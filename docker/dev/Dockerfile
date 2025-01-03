@@ -41,3 +41,5 @@ LABEL \
     org.opencontainers.image.base.name="ubuntu:22.04"
 
 ENTRYPOINT ["/bin/bash"]
+
+# groupadd -g 12345 test-group && useradd test-user --system --create-home --no-log-init -u 12345 -g 12345

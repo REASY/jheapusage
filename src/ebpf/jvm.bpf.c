@@ -6,6 +6,8 @@
 #include <bpf/usdt.bpf.h>
 #include "jvm.h"
 
+const volatile __u64 st_dev = 0;
+const volatile __u64 st_ino = 0;
 const volatile __u64 boot_time_ns = 0;
 const volatile pid_t target_userspace_pid = 0;
 volatile _Bool has_exited = false;
@@ -79,9 +81,15 @@ int BPF_UPROBE(send_gc_heap_summary_event, void *clazz,
 	if (!e)
 		return 0;
 
+	struct bpf_pidns_info ns = {};
+	bpf_get_ns_current_pid_tgid(st_dev, st_ino, &ns,
+				    sizeof(struct bpf_pidns_info));
+
 	e->ts = bpf_ktime_get_ns() + boot_time_ns;
-	e->pid = userspace_pid;
-	e->tid = userspace_tid;
+	e->global_pid = userspace_pid;
+	e->global_tid = userspace_tid;
+	e->ns_pid = ns.tgid;
+	e->ns_tid = ns.pid;
 
 	__u64 used = 0;
 	int ret = bpf_probe_read_user(&used, sizeof(used), &hs->used);
@@ -133,8 +141,15 @@ int BPF_USDT(hotspot_mem_pool_gc_end, uintptr_t *manager, int manager_len,
 	pid_t userspace_pid, userspace_tid;
 	extract_userspace_ids(pid_tgid, &userspace_pid, &userspace_tid);
 
+	struct bpf_pidns_info ns = {};
+	bpf_get_ns_current_pid_tgid(st_dev, st_ino, &ns,
+				    sizeof(struct bpf_pidns_info));
+
 	e->ts = bpf_ktime_get_ns() + boot_time_ns;
-	e->pid = userspace_pid;
+	e->global_pid = userspace_pid;
+	e->global_tid = userspace_tid;
+	e->ns_pid = ns.tgid;
+	e->ns_tid = ns.pid;
 
 	__builtin_memset(e->manager, 0, sizeof(e->manager));
 	__builtin_memset(e->pool, 0, sizeof(e->pool));
@@ -183,8 +198,15 @@ int BPF_USDT(hotspot_mem_pool_gc_begin, uintptr_t *manager, int manager_len,
 	pid_t userspace_pid, userspace_tid;
 	extract_userspace_ids(pid_tgid, &userspace_pid, &userspace_tid);
 
+	struct bpf_pidns_info ns = {};
+	bpf_get_ns_current_pid_tgid(st_dev, st_ino, &ns,
+				    sizeof(struct bpf_pidns_info));
+
 	e->ts = bpf_ktime_get_ns() + boot_time_ns;
-	e->pid = userspace_pid;
+	e->global_pid = userspace_pid;
+	e->global_tid = userspace_tid;
+	e->ns_pid = ns.tgid;
+	e->ns_tid = ns.pid;
 
 	__builtin_memset(e->manager, 0, sizeof(e->manager));
 	__builtin_memset(e->pool, 0, sizeof(e->pool));

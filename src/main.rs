@@ -4,6 +4,7 @@ mod ebpf;
 mod errors;
 mod events;
 mod handlers;
+mod isolation;
 mod logger;
 mod otlp;
 mod utils;
@@ -12,19 +13,23 @@ use crate::ebpf::jvm::types::{gc_heap_summary_event, mem_pool_gc_event};
 use crate::ebpf::jvm::JvmMaps;
 use crate::ebpf::Ebpf;
 use crate::handlers::{GenericEventHandler, RingBufferCallbackHandler};
+use crate::isolation::NamespaceIsolation;
 use crate::otlp::{
     init_metrics, process_as_otlp_gc_heap_summary_event, process_as_otlp_mem_pool_gc_event,
 };
 use crate::utils::{
     check_java_process, estimate_system_boot_time, find_func_symbol, find_loaded_library,
-    increase_memlock_rlimit, unix_timestamp_ns_to_datetime,
+    increase_memlock_rlimit, unix_timestamp_ns_to_datetime, PasswdStruct, ProcessStatus,
 };
 use clap::Parser;
 use errors::Result;
 use lazy_static::lazy_static;
+use libc::pid_t;
+use nix::unistd::{Uid, User};
 use opentelemetry::global;
 use opentelemetry_otlp::Protocol;
 use std::collections::VecDeque;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
@@ -37,7 +42,7 @@ use tracing::{debug, info, warn};
 struct AppArgs {
     /// Java process PID
     #[clap(long)]
-    pid: u32,
+    pid: pid_t,
     /// Verbose debug output
     #[arg(short, long)]
     verbose: bool,
@@ -96,24 +101,55 @@ async fn main() -> Result<()> {
     }
     info!("Received args: {:?}", args);
 
+    let proc_status = ProcessStatus::of_process(args.pid)?;
+    let effective_uid = proc_status.get_effective_uid();
+    info!("Process status is: {:?}", proc_status);
+
+    let pwd_struct = if proc_status.ns_tgid.len() >= 2 {
+        let ns = NamespaceIsolation::new(args.pid);
+        ns.execute(|| {
+            // FIXME
+            let user = User::from_uid(Uid::from(effective_uid)).unwrap();
+            user.map(|x| PasswdStruct::from(x))
+        })?
+    } else {
+        let user = User::from_uid(Uid::from(effective_uid))?;
+        user.map(|x| PasswdStruct::from(x))
+    }
+    .unwrap();
+    info!("Password db is: {:?}", pwd_struct);
+    let ns_tgid: Option<&pid_t> = if proc_status.ns_tgid.len() > 1 {
+        proc_status.ns_tgid.last()
+    } else {
+        None
+    };
+
+    let stat = nix::sys::stat::stat(&PathBuf::from(format!("/proc/{}/ns/pid", args.pid)))?;
+    info!("st_dev: {}, st_ino: {}", stat.st_dev, stat.st_ino);
+
     info!(
         "System boot time in ns: {}, as datetime: {}",
         *BOOT_DATE_TIME,
         unix_timestamp_ns_to_datetime(*BOOT_DATE_TIME as i64)
     );
 
-    check_java_process("/tmp/hsperfdata_user/", args.pid).map_err(|err| {
+    check_java_process(args.pid, ns_tgid, pwd_struct).map_err(|err| {
         warn!("Could not check whether provided process id {} is a Java process. Is it still running? Make sure it does not run with `-XX:-UsePerfData` JVM arguments. The error: {}", args.pid, err);
         err
     })?;
 
-    let Some(libjvm_path) = find_loaded_library(args.pid, LIBJVM_NAME)? else {
-        warn!(
-            "Could not find {} in process {}. Is it Java process?",
-            LIBJVM_NAME, args.pid
-        );
-        return Ok(());
+    let libjvm_path = match find_loaded_library(args.pid, LIBJVM_NAME)? {
+        None => {
+            warn!(
+                "Could not find {} in process {}. Is it Java process?",
+                LIBJVM_NAME, args.pid
+            );
+            return Ok(());
+        }
+        Some(path) => ns_tgid.map_or(path.clone(), |_| format!("/proc/{}/root{}", args.pid, path)),
     };
+    debug!("Path to libjvm: {}", libjvm_path);
+
     let report_gc_heap_summary_name =
         find_func_symbol(libjvm_path.as_str(), REPORT_GC_HEAP_SUMMARY_FUNC)?;
     info!(
@@ -125,7 +161,9 @@ async fn main() -> Result<()> {
     debug!("Increased memlock rlimit");
 
     let mut epbf = Ebpf::new(args.verbose, |skel| {
-        skel.maps.rodata_data.target_userspace_pid = args.pid as i32;
+        skel.maps.rodata_data.st_dev = stat.st_dev;
+        skel.maps.rodata_data.st_ino = stat.st_ino;
+        skel.maps.rodata_data.target_userspace_pid = args.pid;
         skel.maps.rodata_data.boot_time_ns = *BOOT_DATE_TIME;
     });
     epbf.setup(args.pid, libjvm_path.clone(), report_gc_heap_summary_name)?;
@@ -210,7 +248,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn wait_for_target_process_to_exit(pid: u32, jvm_maps: &JvmMaps, should_stop: Arc<AtomicBool>) {
+fn wait_for_target_process_to_exit(pid: pid_t, jvm_maps: &JvmMaps, should_stop: Arc<AtomicBool>) {
     loop {
         if jvm_maps.bss_data.has_exited {
             info!(

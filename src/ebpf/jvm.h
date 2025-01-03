@@ -32,7 +32,10 @@ static __always_inline void extract_userspace_ids(__u64 pid_tgid,
 
 struct mem_pool_gc_event {
 	__u64 ts; // Timestamp
-	__u64 pid; // PID that hit the probe
+	pid_t global_pid; // Global userspace process id that hit the probe
+	pid_t global_tid; // Global userspace thread id that hit the probe
+	pid_t ns_pid; // Namespaced userspace process id that hit the probe
+	pid_t ns_tid; // Namespaced userspace thread id that hit the probe
 	__u64 init_size; // Initial size of the memory pool
 	__u64 used; // Used memory size
 	__u64 committed; // Committed memory size
@@ -57,8 +60,10 @@ struct gc_heap_summary {
 
 struct gc_heap_summary_event {
 	__u64 ts; // Timestamp
-	__u64 pid; // Userspace process id that hit the probe
-	__u64 tid; // Userspace thread id that hit the probe
+	pid_t global_pid; // Global userspace process id that hit the probe
+	pid_t global_tid; // Global userspace thread id that hit the probe
+	pid_t ns_pid; // Namespaced userspace process id that hit the probe
+	pid_t ns_tid; // Namespaced userspace thread id that hit the probe
 	enum gc_when_type_enum gc_when_type;
 	__u64 used;
 };

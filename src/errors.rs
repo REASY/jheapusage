@@ -21,6 +21,12 @@ pub enum ErrorKind {
     ObjectError(#[from] object::read::Error),
     #[error("JoinError: {0}")]
     JoinError(#[from] tokio::task::JoinError),
+    #[error("NixErrno: {0}")]
+    NixErrno(#[from] nix::Error),
+    #[error("ParseIntError: {0}")]
+    ParseIntError(#[from] std::num::ParseIntError),
+    #[error("SerdeJsonError: {0}")]
+    SerdeJsonError(#[from] serde_json::Error),
 }
 
 impl<E> From<E> for AppError
