@@ -1,6 +1,6 @@
 [package]
 name = "jheapusage"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["Artavazd Balaian <reasyu@gmail.com>"]
 license = "MIT License"
 edition = "2021"
@@ -30,4 +30,5 @@ libbpf-cargo = "0.24.8"
 vmlinux = { version = "0.0", git = "https://github.com/libbpf/vmlinux.h.git", rev = "83a228cf37fc65f2d14e4896a04922b5ee531a94" }
 
 [profile.release]
+# To have symbols when running release version in valgrind to check for memory issues
 debug = true

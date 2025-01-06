@@ -109,7 +109,10 @@ impl Ebpf {
                     ..Default::default()
                 },
             )?;
-        info!("Attached UProbe on {} to the process {}. Link is {:?}", report_gc_heap_summary_name, pid, link);
+        info!(
+            "Attached UProbe on {} to the process {}. Link is {:?}",
+            report_gc_heap_summary_name, pid, link
+        );
         self._links.push(link);
 
         Ok(())

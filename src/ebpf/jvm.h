@@ -48,7 +48,7 @@ struct mem_pool_gc_event {
 // https://github.com/openjdk/jdk/blob/jdk-21%2B35/src/hotspot/share/gc/shared/gcWhen.hpp#L32-L37
 enum gc_when_type_enum { BeforeGC, AfterGC, GCWhenEndSentinel };
 
-// Use https://godbolt.org/z/dbq9cv7G9 to help to understand the alignment
+// Use https://godbolt.org/z/YcodaPhvY to help to understand memory layout of `GCHeapSummary` C++ class
 // https://github.com/openjdk/jdk/blob/jdk-21%2B35/src/hotspot/share/gc/shared/gcHeapSummary.hpp#L76
 struct gc_heap_summary {
 	__u64 _s1;
