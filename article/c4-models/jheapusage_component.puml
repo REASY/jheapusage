@@ -1,0 +1,47 @@
+@startuml
+set separator none
+
+hide stereotype
+
+!include <C4/C4>
+!include <C4/C4_Context>
+!include <C4/C4_Container>
+!include <C4/C4_Component>
+
+title C4 Component Diagram - jheapusage
+
+Person(user, "Engineer", "Runs the jheapusage CLI to observe Java process heap usage")
+
+System_Ext(javaProcess, "Target Java Process", "JVM", "The running Java process whose heap usage is monitored")
+System_Ext(otelCollector, "OTLP Endpoint", "Observability System", "Collects and processes metrics/events")
+
+Container_Boundary(jheapusage, "jheapusage (Rust CLI)") {
+  Component(main_rs, "Main (src/main.rs)", "Rust", "Entry point CLI. Orchestrates eBPF, event handling, and OTLP export.")
+  Component(ebpf_rs, "eBPF Module (src/ebpf.rs + src/ebpf/jvm.bpf.c)", "Rust/C with libbpf-rs", "Attaches to JVM’s USDT and uprobe to capture GC/memory events")
+  Component(events_rs, "Events (src/events.rs)", "Rust + plain", "Plain data structures for eBPF ring buffer events")
+  Component(handlers_rs, "Handlers (src/handlers.rs)", "Rust", "Ring buffer callback logic to push events into queues for async processing")
+  Component(isolation_rs, "Namespace Isolation (src/isolation.rs)", "Rust + serde + nix", "Allows running inside isolated namespaces for the target PID")
+  Component(logger_rs, "Logger (src/logger.rs)", "Rust", "Configures the tracing subscriber logs")
+  Component(otlp_rs, "OTLP Exporter (src/otlp.rs)", "Rust + opentelemetry-otlp", "Sends the captured events as OpenTelemetry metrics")
+  Component(utils_rs, "Utils (src/utils.rs)", "Rust", "Utility functions")
+  Component(errors_rs, "Errors (src/errors.rs)", "Rust + thiserror", "Centralized error handling")
+
+  ' Relationships among internal components
+  Rel(main_rs, ebpf_rs, "Uses", "Attaches eBPF programs to gather data from Java process")
+  Rel(main_rs, handlers_rs, "Dispatches ring buffer events to be processed")
+  Rel(main_rs, isolation_rs, "Uses", "Executes provided Rust function inside target’s namespace if needed")
+  Rel(main_rs, logger_rs, "Initializes logging/tracing")
+  Rel(main_rs, utils_rs, "Uses", "Utility functions (RLIMIT memlock, symbol searching, etc.)")
+  Rel(main_rs, errors_rs, "Uses", "Error definitions across the codebase")
+  Rel(ebpf_rs, utils_rs, "Uses", "Symbol resolution for uprobe function hooking")
+  Rel(main_rs, events_rs, "Reads typed data structures")
+  Rel(events_rs, utils_rs, "Utility & helper usage")
+  Rel(handlers_rs, otlp_rs, "Passes events to OTLP exporter queue", "through shared job queue")
+}
+
+' External relationships
+Rel(user, main_rs, "Invokes the CLI", "Runs jheapusage on a Java PID")
+Rel(ebpf_rs, javaProcess, "Attaches USDT and uprobe to libjvm.so", "Collect GC/mem usage events")
+Rel(otlp_rs, otelCollector, "Sends metrics via OTLP", "HTTP or gRPC (configured in OTEL_EXPORTER_OTLP_ENDPOINT)")
+
+@enduml
