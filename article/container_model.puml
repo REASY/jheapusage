@@ -1,0 +1,30 @@
+@startuml
+set separator none
+
+top to bottom direction
+
+!include <C4/C4>
+!include <C4/C4_Context>
+!include <C4/C4_Container>
+
+System_Boundary(system, "Observability System") {
+    Container(jheapusage, "jheapusage", "Rust/C", "Manages eBPF programs, collects heap data and pushes to OpenTelemetry.")
+    Container(eBPFProgram, "eBPF Programs", "eBPF", "Hooks into tracepoints and uprobes for monitoring JVM events and process exits.")
+    Container(javaApp, "Java Application", "Java", "Runs on the JVM, emitting tracepoints for garbage collection events.")
+    Container(kernel, "Linux Kernel Layer", "Linux Kernel", "Executes eBPF programs and manages low-level system tracing.")
+    Container(otlp, "OTLP Collector", "Open Telemetry Collector", "Exports metrics to different backends")
+    ContainerDb(prometheus, "Prometheus", "Time-series DB", "Stores metrics as time series data alongside optional key-value pairs called labels")
+    Container(grafana, "Grafana", "Visualization tool", "Query and visualize different data sources")
+}
+
+Rel(jheapusage, eBPFProgram, "Deploys and manages")
+Rel(eBPFProgram, jheapusage,  "Writes GC-events", "Using RingBuffer")
+Rel(jheapusage, otlp, "Pushes GC-events as metrics")
+Rel(otlp, prometheus, "Writes GC-events")
+Rel(grafana, prometheus, "Reads and visualizes GC metrics")
+Rel(eBPFProgram, javaApp, "Hooks into", "eBPF USDTs, uprobes and tracepoints")
+Rel(eBPFProgram, kernel, "Runs within")
+Rel(javaApp, kernel, "Emits tracepoints")
+
+SHOW_LEGEND(true)
+@enduml
