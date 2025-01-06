@@ -56,8 +56,8 @@ int sched_process_exit(struct trace_event_raw_sched_process_template *ctx)
 }
 
 SEC("uprobe")
-int BPF_UPROBE(send_gc_heap_summary_event, void *clazz,
-	       enum gc_when_type_enum when, struct gc_heap_summary *hs)
+int BPF_UPROBE(report_gc_heap_summary, void *clazz, enum gc_when_type_enum when,
+	       struct gc_heap_summary *hs)
 {
 	char command[TASK_COMM_LEN];
 	__builtin_memset(command, 0, sizeof(command));
@@ -67,7 +67,7 @@ int BPF_UPROBE(send_gc_heap_summary_event, void *clazz,
 	const char g1_main_maker_thread_name[] = "G1 Main Marker";
 	if (__builtin_memcmp(command, g1_main_maker_thread_name,
 			     sizeof(g1_main_maker_thread_name)) == 0) {
-		bpf_printk("send_gc_heap_summary_event: Skipping event from %s",
+		bpf_printk("report_gc_heap_summary: Skipping event from %s",
 			   command);
 		return 0;
 	}
@@ -95,23 +95,23 @@ int BPF_UPROBE(send_gc_heap_summary_event, void *clazz,
 	int ret = bpf_probe_read_user(&used, sizeof(used), &hs->used);
 	if (ret != 0) {
 		bpf_printk(
-			"send_gc_heap_summary_event: bpf_probe_read_user hs failed: %d",
+			"report_gc_heap_summary: bpf_probe_read_user hs failed: %d",
 			ret);
 	};
 
 	if (when == BeforeGC) {
 		bpf_printk(
-			"send_gc_heap_summary_event: Userspace (PID %d, TID %d), cmd: "
+			"report_gc_heap_summary: Userspace (PID %d, TID %d), cmd: "
 			"%s, type BeforeGC [%d], used %d",
 			userspace_pid, userspace_tid, command, when, used);
 	} else if (when == AfterGC) {
 		bpf_printk(
-			"send_gc_heap_summary_event: Userspace (PID %d, TID %d), cmd: "
+			"report_gc_heap_summary: Userspace (PID %d, TID %d), cmd: "
 			"%s, type AfterGC [%d], used %d",
 			userspace_pid, userspace_tid, command, when, used);
 	} else if (when == GCWhenEndSentinel) {
 		bpf_printk(
-			"send_gc_heap_summary_event: Userspace (PID %d, TID %d), cmd: "
+			"report_gc_heap_summary: Userspace (PID %d, TID %d), cmd: "
 			"%s, type GCWhenEndSentinel [%d], used %d",
 			userspace_pid, userspace_tid, command, when, used);
 	}
@@ -121,6 +121,63 @@ int BPF_UPROBE(send_gc_heap_summary_event, void *clazz,
 
 	bpf_ringbuf_submit(e, 0);
 
+	return 0;
+}
+
+SEC("usdt")
+int BPF_USDT(hotspot_mem_pool_gc_begin, uintptr_t *manager, int manager_len,
+	     uintptr_t *pool, int pool_len, __u64 init_size, __u64 used,
+	     __u64 committed, __u64 max_size)
+{
+	bpf_printk("hotspot_mem_pool_gc_begin: used %d", used);
+
+	struct mem_pool_gc_event *e;
+	e = bpf_ringbuf_reserve(&rg_hotspot_mem_pool_gc, sizeof(*e), 0);
+	if (!e)
+		return 0;
+
+	__u64 pid_tgid = bpf_get_current_pid_tgid();
+	pid_t userspace_pid, userspace_tid;
+	extract_userspace_ids(pid_tgid, &userspace_pid, &userspace_tid);
+
+	struct bpf_pidns_info ns = {};
+	bpf_get_ns_current_pid_tgid(st_dev, st_ino, &ns,
+				    sizeof(struct bpf_pidns_info));
+
+	e->ts = bpf_ktime_get_ns() + boot_time_ns;
+	e->global_pid = userspace_pid;
+	e->global_tid = userspace_tid;
+	e->ns_pid = ns.tgid;
+	e->ns_tid = ns.pid;
+
+	__builtin_memset(e->manager, 0, sizeof(e->manager));
+	__builtin_memset(e->pool, 0, sizeof(e->pool));
+	if (manager && manager_len > 0) {
+		if (bpf_probe_read_str(e->manager, sizeof(e->manager),
+				       (void *)manager) < 0) {
+			bpf_printk(
+				"hotspot_mem_pool_gc_begin: bpf_probe_read_str failed to copy from "
+				"`manager` %d chars into buffer e->manager with the size %d",
+				manager_len, sizeof(e->manager));
+		}
+	}
+	if (pool && pool_len > 0) {
+		if (bpf_probe_read_str(e->pool, sizeof(e->pool), (void *)pool) <
+		    0) {
+			bpf_printk(
+				"hotspot_mem_pool_gc_begin: bpf_probe_read_str failed to copy "
+				"from `pool` %d chars into buffer e->pool with the size %d",
+				pool_len, sizeof(e->pool));
+		}
+	}
+
+	e->init_size = init_size;
+	e->used = used;
+	e->committed = committed;
+	e->max_size = max_size;
+	e->is_begin = 1;
+
+	bpf_ringbuf_submit(e, 0);
 	return 0;
 }
 
@@ -177,63 +234,6 @@ int BPF_USDT(hotspot_mem_pool_gc_end, uintptr_t *manager, int manager_len,
 	e->committed = committed;
 	e->max_size = max_size;
 	e->is_begin = 0;
-
-	bpf_ringbuf_submit(e, 0);
-	return 0;
-}
-
-SEC("usdt")
-int BPF_USDT(hotspot_mem_pool_gc_begin, uintptr_t *manager, int manager_len,
-	     uintptr_t *pool, int pool_len, __u64 init_size, __u64 used,
-	     __u64 committed, __u64 max_size)
-{
-	bpf_printk("hotspot_mem_pool_gc_begin: used %d", used);
-
-	struct mem_pool_gc_event *e;
-	e = bpf_ringbuf_reserve(&rg_hotspot_mem_pool_gc, sizeof(*e), 0);
-	if (!e)
-		return 0;
-
-	__u64 pid_tgid = bpf_get_current_pid_tgid();
-	pid_t userspace_pid, userspace_tid;
-	extract_userspace_ids(pid_tgid, &userspace_pid, &userspace_tid);
-
-	struct bpf_pidns_info ns = {};
-	bpf_get_ns_current_pid_tgid(st_dev, st_ino, &ns,
-				    sizeof(struct bpf_pidns_info));
-
-	e->ts = bpf_ktime_get_ns() + boot_time_ns;
-	e->global_pid = userspace_pid;
-	e->global_tid = userspace_tid;
-	e->ns_pid = ns.tgid;
-	e->ns_tid = ns.pid;
-
-	__builtin_memset(e->manager, 0, sizeof(e->manager));
-	__builtin_memset(e->pool, 0, sizeof(e->pool));
-	if (manager && manager_len > 0) {
-		if (bpf_probe_read_str(e->manager, sizeof(e->manager),
-				       (void *)manager) < 0) {
-			bpf_printk(
-				"hotspot_mem_pool_gc_begin: bpf_probe_read_str failed to copy from "
-				"`manager` %d chars into buffer e->manager with the size %d",
-				manager_len, sizeof(e->manager));
-		}
-	}
-	if (pool && pool_len > 0) {
-		if (bpf_probe_read_str(e->pool, sizeof(e->pool), (void *)pool) <
-		    0) {
-			bpf_printk(
-				"hotspot_mem_pool_gc_begin: bpf_probe_read_str failed to copy "
-				"from `pool` %d chars into buffer e->pool with the size %d",
-				pool_len, sizeof(e->pool));
-		}
-	}
-
-	e->init_size = init_size;
-	e->used = used;
-	e->committed = committed;
-	e->max_size = max_size;
-	e->is_begin = 1;
 
 	bpf_ringbuf_submit(e, 0);
 	return 0;

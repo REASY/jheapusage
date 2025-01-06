@@ -99,17 +99,17 @@ impl Ebpf {
         let link = self
             .jvm
             .progs
-            .send_gc_heap_summary_event
+            .report_gc_heap_summary
             .attach_uprobe_with_opts(
                 pid as i32,
-                libjvm_path,
+                libjvm_path.clone(),
                 0,
                 UprobeOpts {
-                    func_name: report_gc_heap_summary_name,
+                    func_name: report_gc_heap_summary_name.clone(),
                     ..Default::default()
                 },
             )?;
-        info!("Attached UProbe to the process {}. Link is {:?}", pid, link);
+        info!("Attached UProbe on {} to the process {}. Link is {:?}", report_gc_heap_summary_name, pid, link);
         self._links.push(link);
 
         Ok(())

@@ -123,6 +123,13 @@ async fn main() -> Result<()> {
     } else {
         None
     };
+    if ns_tgid.is_some() {
+        info!(
+            "Target process is running in isolated namespace (container?). Process ids in all namespaces: {:?}, namespace ids: {:?}",
+            proc_status.ns_tgid,
+            proc_status.ns_sid
+        );
+    }
 
     let stat = nix::sys::stat::stat(&PathBuf::from(format!("/proc/{}/ns/pid", args.pid)))?;
     info!("st_dev: {}, st_ino: {}", stat.st_dev, stat.st_ino);

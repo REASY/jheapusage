@@ -24,26 +24,6 @@ impl NamespaceIsolation {
         NamespaceIsolation { pid }
     }
 
-    fn enter_namespaces(&self) -> errors::Result<()> {
-        // The order is important!
-        // https://github.com/util-linux/util-linux/blob/4e14b5731efcd703ad13e24362448c87cecb5424/sys-utils/nsenter.c#L63-L80
-        let namespaces = ["user", "cgroup", "ipc", "uts", "net", "pid", "mnt", "time"];
-        for ns in namespaces {
-            if Self::can_enter_namespace(self.pid, ns) {
-                self.enter_namespace(ns)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn enter_namespace(&self, ns: &str) -> errors::Result<()> {
-        let ns_path = PathBuf::from(format!("/proc/{}/ns/{ns}", self.pid));
-        let raw_fd = nix::fcntl::open(&ns_path, OFlag::O_RDONLY, Mode::empty())?;
-        let fd = unsafe { BorrowedFd::borrow_raw(raw_fd) };
-        setns(fd, CloneFlags::empty())?;
-        Ok(())
-    }
-
     pub fn execute<F, T: Debug + Serialize + DeserializeOwned>(&self, func: F) -> errors::Result<T>
     where
         F: Fn() -> T,
@@ -56,14 +36,12 @@ impl NamespaceIsolation {
             Ok(ForkResult::Parent { child }) => {
                 // Immediate close write end of the pipe in parent process, parent will only read.
                 nix::unistd::close(writer.as_raw_fd())?;
-                debug!(
-                    "Parent process PID: {}, spawned child PID: {}",
-                    process::id(),
-                    child
-                );
+                debug!("Waiting for forked process {} to complete...", child);
                 let wait_status = waitpid(child, None)?;
-                debug!("wait_status: {:?}", wait_status);
-
+                debug!(
+                    "Forked child process completed, the status is {:?}",
+                    wait_status
+                );
                 match wait_status {
                     WaitStatus::Exited(_, exit_code) => {
                         if exit_code != 0 {
@@ -76,8 +54,7 @@ impl NamespaceIsolation {
 
                 let buffer = Self::read_all(&reader)?;
                 let data: T = serde_json::from_slice(&buffer)?;
-                debug!("data: {:?}", data);
-
+                debug!("Parent process {} read back {:?}", process::id(), data);
                 Ok(data)
             }
             Ok(ForkResult::Child) => {
@@ -123,6 +100,7 @@ impl NamespaceIsolation {
         F: Fn() -> T,
     {
         self.enter_namespaces()?;
+        debug!("Entered namespace of a process {}", self.pid);
         let r = func();
         let serialized = serde_json::to_vec(&r)?;
         write(writer, &serialized)?;
@@ -140,7 +118,10 @@ impl NamespaceIsolation {
         let my_inode = match Self::get_inode(&my_ns_path) {
             Ok(ino) => ino,
             Err(e) if e.kind() == io::ErrorKind::NotFound => return false, // Unsupported NS
-            Err(_) => panic!("Failed to get inode for {:?}", my_ns_path),
+            Err(err) => {
+                error!("Failed to get inode for {:?}, err: {}", my_ns_path, err);
+                panic!("Failed to get inode for {:?}, err: {}", my_ns_path, err);
+            }
         };
         // It is not permitted to use setns to reenter the caller's
         // current user namespace; see setns man page for more details.
@@ -148,7 +129,10 @@ impl NamespaceIsolation {
             let target_ns_path = PathBuf::from(format!("/proc/{}/ns/{ns}", target_pid));
             let target_inode = match Self::get_inode(&target_ns_path) {
                 Ok(ino) => ino,
-                Err(_) => panic!("Failed to stat {:?}", target_ns_path),
+                Err(err) => {
+                    error!("Failed to stat {:?}, err: {}", target_ns_path, err);
+                    panic!("Failed to stat {:?}, err: {}", target_ns_path, err);
+                }
             };
 
             if my_inode == target_inode {
@@ -156,5 +140,25 @@ impl NamespaceIsolation {
             }
         }
         true
+    }
+
+    fn enter_namespaces(&self) -> errors::Result<()> {
+        // The order is important!
+        // https://github.com/util-linux/util-linux/blob/4e14b5731efcd703ad13e24362448c87cecb5424/sys-utils/nsenter.c#L63-L80
+        let namespaces = ["user", "cgroup", "ipc", "uts", "net", "pid", "mnt", "time"];
+        for ns in namespaces {
+            if Self::can_enter_namespace(self.pid, ns) {
+                self.enter_namespace(ns)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn enter_namespace(&self, ns_type: &str) -> errors::Result<()> {
+        let ns_path = PathBuf::from(format!("/proc/{}/ns/{ns_type}", self.pid));
+        let raw_fd = nix::fcntl::open(&ns_path, OFlag::O_RDONLY, Mode::empty())?;
+        let fd = unsafe { BorrowedFd::borrow_raw(raw_fd) };
+        setns(fd, CloneFlags::empty())?;
+        Ok(())
     }
 }
