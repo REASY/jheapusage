@@ -15,6 +15,8 @@ pub enum ErrorKind {
     BpfError(#[from] libbpf_rs::Error),
     #[error("MetricError: {0}")]
     MetricError(#[from] opentelemetry_sdk::metrics::MetricError),
+    #[error("LibNotFoundError: {0}")]
+    LibNotFoundError(String),
     #[error("FuncNotFoundError: {0}")]
     FuncNotFoundError(String),
     #[error("ObjectError: {0}")]

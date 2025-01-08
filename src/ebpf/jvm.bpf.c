@@ -6,10 +6,12 @@
 #include <bpf/usdt.bpf.h>
 #include "jvm.h"
 
+// Input parameters to eBPF programs
 const volatile __u64 st_dev = 0;
 const volatile __u64 st_ino = 0;
 const volatile __u64 boot_time_ns = 0;
 const volatile pid_t target_userspace_pid = 0;
+
 volatile _Bool has_exited = false;
 volatile __s32 exit_code = 0;
 
@@ -18,15 +20,14 @@ volatile __s32 exit_code = 0;
 struct mem_pool_gc_event _mem_pool_gc_event = { 0 };
 struct gc_heap_summary_event _gc_heap_summary_event = { 0 };
 
-// FIXME: Do we need so large, 16 MB ring buffer?
 struct {
 	__uint(type, BPF_MAP_TYPE_RINGBUF);
-	__uint(max_entries, 1 << 24); // 16MB ring buffer
+	__uint(max_entries, 4 * 1024 * 1024); // 4MB ring buffer
 } rg_hotspot_mem_pool_gc SEC(".maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_RINGBUF);
-	__uint(max_entries, 1 << 24); // 16MB ring buffer
+	__uint(max_entries, 4 * 1024 * 1024); // 4MB ring buffer
 } rg_send_gc_heap_summary_event SEC(".maps");
 
 SEC("tracepoint/sched/sched_process_exit")
@@ -63,6 +64,7 @@ int BPF_UPROBE(report_gc_heap_summary, void *clazz, enum gc_when_type_enum when,
 	__builtin_memset(command, 0, sizeof(command));
 	bpf_get_current_comm(command, sizeof(command));
 
+	// Ignore event from `G1 Main Marker`, it is not true GC event
 	// https://github.com/openjdk/jdk/blob/jdk-11%2B28/src/hotspot/share/gc/g1/g1ConcurrentMarkThread.cpp#L87
 	const char g1_main_maker_thread_name[] = "G1 Main Marker";
 	if (__builtin_memcmp(command, g1_main_maker_thread_name,
@@ -129,7 +131,7 @@ int BPF_USDT(hotspot_mem_pool_gc_begin, uintptr_t *manager, int manager_len,
 	     uintptr_t *pool, int pool_len, __u64 init_size, __u64 used,
 	     __u64 committed, __u64 max_size)
 {
-	bpf_printk("hotspot_mem_pool_gc_begin: used %d", used);
+	// https://github.com/openjdk/jdk/blob/jdk-21%2B35/src/hotspot/share/services/memoryManager.cpp#L230
 
 	struct mem_pool_gc_event *e;
 	e = bpf_ringbuf_reserve(&rg_hotspot_mem_pool_gc, sizeof(*e), 0);
@@ -186,9 +188,8 @@ int BPF_USDT(hotspot_mem_pool_gc_end, uintptr_t *manager, int manager_len,
 	     uintptr_t *pool, int pool_len, __u64 init_size, __u64 used,
 	     __u64 committed, __u64 max_size)
 {
-	// https://github.com/openjdk/jdk/blob/master/src/hotspot/share/services/memoryManager.cpp#L274
-	// Inspired by
-	// https://github.com/torvalds/linux/blob/master/tools/testing/selftests/bpf/progs/test_usdt.c
+	// https://github.com/openjdk/jdk/blob/jdk-21%2B35/src/hotspot/share/services/memoryManager.cpp#L263
+
 	struct mem_pool_gc_event *e;
 	e = bpf_ringbuf_reserve(&rg_hotspot_mem_pool_gc, sizeof(*e), 0);
 	if (!e)

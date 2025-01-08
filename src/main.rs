@@ -12,6 +12,7 @@ mod utils;
 use crate::ebpf::jvm::types::{gc_heap_summary_event, mem_pool_gc_event};
 use crate::ebpf::jvm::JvmMaps;
 use crate::ebpf::Ebpf;
+use crate::errors::{AppError, ErrorKind};
 use crate::handlers::{GenericEventHandler, RingBufferCallbackHandler};
 use crate::isolation::NamespaceIsolation;
 use crate::otlp::{
@@ -151,7 +152,10 @@ async fn main() -> Result<()> {
                 "Could not find {} in process {}. Is it Java process?",
                 LIBJVM_NAME, args.pid
             );
-            return Ok(());
+            return Err(AppError::from(ErrorKind::LibNotFoundError(format!(
+                "Could not find {} in process {}. Is it Java process?",
+                LIBJVM_NAME, args.pid
+            ))));
         }
         Some(path) => ns_tgid.map_or(path.clone(), |_| format!("/proc/{}/root{}", args.pid, path)),
     };
@@ -160,7 +164,7 @@ async fn main() -> Result<()> {
     let report_gc_heap_summary_name =
         find_func_symbol(libjvm_path.as_str(), REPORT_GC_HEAP_SUMMARY_FUNC)?;
     info!(
-        "report_gc_heap_summary_name: {}",
+        "The full name for report_gc_heap_summary_name is {}",
         report_gc_heap_summary_name
     );
 
