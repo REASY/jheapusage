@@ -20,7 +20,8 @@ use crate::otlp::{
 };
 use crate::utils::{
     check_java_process, estimate_system_boot_time, find_func_symbol, find_loaded_library,
-    increase_memlock_rlimit, unix_timestamp_ns_to_datetime, PasswdStruct, ProcessStatus,
+    get_java_main_class_from_command, increase_memlock_rlimit, unix_timestamp_ns_to_datetime,
+    PasswdStruct, ProcessStatus,
 };
 use clap::Parser;
 use errors::Result;
@@ -141,10 +142,16 @@ async fn main() -> Result<()> {
         unix_timestamp_ns_to_datetime(*BOOT_DATE_TIME as i64)
     );
 
-    check_java_process(args.pid, ns_tgid, pwd_struct).map_err(|err| {
+    let jvm_cmd = check_java_process(args.pid, ns_tgid, pwd_struct).map_err(|err| {
         warn!("Could not check whether provided process id {} is a Java process. Is it still running? Make sure it does not run with `-XX:-UsePerfData` JVM arguments. The error: {}", args.pid, err);
         err
     })?;
+    info!(
+        "Java command line for process {} is `{}`",
+        args.pid, jvm_cmd
+    );
+    let java_main_class = get_java_main_class_from_command(jvm_cmd.as_str());
+    info!("Java main class is `{}`", java_main_class);
 
     let libjvm_path = match find_loaded_library(args.pid, LIBJVM_NAME)? {
         None => {
@@ -181,7 +188,7 @@ async fn main() -> Result<()> {
     let jvm_maps = epbf.maps();
 
     // Setup OpenTelementry
-    let meter_provider = init_metrics(Protocol::HttpJson)?;
+    let meter_provider = init_metrics(Protocol::HttpJson, java_main_class)?;
     global::set_meter_provider(meter_provider.clone());
 
     let should_stop = Arc::new(AtomicBool::new(false));

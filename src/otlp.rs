@@ -137,7 +137,10 @@ pub async fn process_as_otlp_mem_pool_gc_event(
     }
 }
 
-pub fn init_metrics(protocol: Protocol) -> crate::errors::Result<SdkMeterProvider> {
+pub fn init_metrics(
+    protocol: Protocol,
+    service_name: String,
+) -> crate::errors::Result<SdkMeterProvider> {
     let exporter = MetricExporter::builder()
         .with_http()
         .with_protocol(protocol)
@@ -153,7 +156,7 @@ pub fn init_metrics(protocol: Protocol) -> crate::errors::Result<SdkMeterProvide
         Box::new(EnvResourceDetector::new()),
     ];
     let resource = Resource::from_detectors(Duration::from_secs(5), detectors).merge(
-        &Resource::new_with_defaults([KeyValue::new(resource::SERVICE_NAME, "jheapusage")]),
+        &Resource::new_with_defaults([KeyValue::new(resource::SERVICE_NAME, service_name)]),
     );
     Ok(SdkMeterProvider::builder()
         .with_resource(resource)

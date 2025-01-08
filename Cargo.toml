@@ -1,6 +1,6 @@
 [package]
 name = "jheapusage"
-version = "0.1.4"
+version = "0.1.5"
 authors = ["Artavazd Balaian <reasyu@gmail.com>"]
 license = "MIT License"
 edition = "2021"
@@ -11,6 +11,7 @@ clap = { version = "4.5", features = ["derive"] }
 lazy_static = "1"
 libbpf-rs = "0.24.8"
 libc = "0.2"
+memchr = "2"
 nix = {  version = "0.29.0", features = ["fs", "sched", "user", "time"] }
 object = "0.36.7"
 opentelemetry = "0.27.1"

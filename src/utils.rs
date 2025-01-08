@@ -2,6 +2,7 @@ use crate::errors::ErrorKind::FuncNotFoundError;
 use crate::errors::{AppError, ErrorKind, Result};
 use chrono::{DateTime, Utc};
 use libc::{pid_t, timespec, uid_t};
+use memchr::memmem;
 use nix::sys::time::{TimeSpec, TimeValLike};
 use nix::time::{clock_gettime, ClockId};
 use nix::unistd::User;
@@ -257,7 +258,7 @@ pub fn check_java_process(
     pid: pid_t,
     ns_tgid: Option<&pid_t>,
     pwd_struct: PasswdStruct,
-) -> Result<()> {
+) -> Result<String> {
     // Inspired by https://github.com/openjdk/jdk/blob/62a4544bb76aa339a8129f81d2527405a1b1e7e3/src/jdk.internal.jvmstat/share/classes/sun/jvmstat/perfdata/monitor/protocol/local/LocalVmManager.java#L77-L116
     let hs_perf_path = if let Some(ns_tgid) = ns_tgid {
         format!(
@@ -274,10 +275,35 @@ pub fn check_java_process(
         hs_perf_path
     );
     let mut f = File::open(hs_perf_path)?;
-    let mut buf: [u8; 64] = [0; 64];
-    f.read(&mut buf)?;
-    debug!("PerfDataFile at {:?} is readable", hs_perf_path);
-    Ok(())
+    let mut buf: Vec<u8> = Vec::new();
+    f.read_to_end(&mut buf)?;
+    debug!(
+        "PerfDataFile at {:?} is readable, buf size is {}",
+        hs_perf_path,
+        buf.len()
+    );
+
+    let slice = buf.as_slice();
+    let jvm_command_pattern = "sun.rt.javaCommand";
+    match memmem::find(slice, jvm_command_pattern.as_bytes()) {
+        None => {
+            warn!(
+                "Could not find {} pattern in PerfDataFile",
+                jvm_command_pattern
+            );
+            Ok(String::new())
+        }
+        Some(pattern_start_offset) => {
+            let cmd_start_offset = pattern_start_offset + 1 + jvm_command_pattern.len();
+            let mut offset = cmd_start_offset;
+            while slice[offset] != 0x00 {
+                offset += 1;
+            }
+            let jvm_command: String =
+                String::from_utf8_lossy(&slice[cmd_start_offset..offset]).to_string();
+            Ok(jvm_command)
+        }
+    }
 }
 
 /// Estimates the system start-time (boot time) in Unix-epoch nanoseconds
@@ -358,4 +384,18 @@ pub fn unix_timestamp_ns_to_datetime(timestamp: i64) -> DateTime<Utc> {
     // Construct a DateTime
     let dt = DateTime::from_timestamp(secs, nanos).expect("t5 is out of range for NaiveDateTime");
     dt
+}
+
+pub fn get_java_main_class_from_command(full_cmd: &str) -> String {
+    let cmd = match full_cmd.find(' ') {
+        None => full_cmd,
+        Some(offset) => &full_cmd[..offset],
+    };
+    match cmd.rfind(".jar") {
+        None => cmd.to_string(),
+        Some(_) => match cmd.rfind('/') {
+            None => cmd.to_string(),
+            Some(offset) => cmd[offset + 1..].to_string(),
+        },
+    }
 }
