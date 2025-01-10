@@ -118,7 +118,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "runtime_jvm_memory_total_used_bytes{service_name=\"jheapusage\", jvm_memory_state=\"BeforeGC\"}\nunless (time() - timestamp(runtime_jvm_memory_total_used_bytes{service_name=\"jheapusage\", jvm_memory_state=\"BeforeGC\"}) > 10)",
+          "expr": "runtime_jvm_memory_total_used_bytes{service_name=\"$java_app\", jvm_memory_state=\"BeforeGC\"}\nunless (time() - timestamp(runtime_jvm_memory_total_used_bytes{service_name=\"$java_app\", jvm_memory_state=\"BeforeGC\"}) > 10)",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -134,7 +134,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "runtime_jvm_memory_total_used_bytes{service_name=\"jheapusage\", jvm_memory_state=\"AfterGC\"}\nunless (time() - timestamp(runtime_jvm_memory_total_used_bytes{service_name=\"jheapusage\", jvm_memory_state=\"AfterGC\"}) > 10)",
+          "expr": "runtime_jvm_memory_total_used_bytes{service_name=\"$java_app\", jvm_memory_state=\"AfterGC\"}\nunless (time() - timestamp(runtime_jvm_memory_total_used_bytes{service_name=\"$java_app\", jvm_memory_state=\"AfterGC\"}) > 10)",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -202,7 +202,26 @@
   "schemaVersion": 40,
   "tags": [],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": {
+          "text": "com.moonsworth.lunar.genesis.Genesis",
+          "value": "com.moonsworth.lunar.genesis.Genesis"
+        },
+        "definition": "label_values(runtime_jvm_memory_used_bytes,service_name)",
+        "name": "java_app",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(runtime_jvm_memory_used_bytes,service_name)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      }
+    ]
   },
   "time": {
     "from": "now-15m",
@@ -211,7 +230,6 @@
   "timepicker": {},
   "timezone": "browser",
   "title": "Java Memory: ePBF vs OpenTelemetry",
-  "uid": "be8rabb3wy680a",
   "version": 1,
   "weekStart": ""
 }
