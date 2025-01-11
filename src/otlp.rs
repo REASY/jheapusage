@@ -147,7 +147,7 @@ pub fn init_metrics(
         .with_temporality(Temporality::default())
         .build()?;
     let reader = opentelemetry_sdk::metrics::PeriodicReader::builder(exporter, runtime::Tokio)
-        .with_interval(Duration::from_millis(500))
+        .with_interval(Duration::from_millis(1000))
         .build();
 
     let detectors: Vec<Box<dyn ResourceDetector>> = vec![

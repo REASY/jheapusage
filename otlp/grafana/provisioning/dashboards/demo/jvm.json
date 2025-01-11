@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 3,
+  "id": 2,
   "links": [],
   "panels": [
     {
@@ -161,7 +161,7 @@
           "useBackend": false
         }
       ],
-      "title": "Used Total Java Heap Memory",
+      "title": "Used Total Java Heap Memory: Java Agent vs gc_heap_summary_event ",
       "type": "timeseries"
     },
     {
@@ -304,7 +304,7 @@
           "useBackend": false
         }
       ],
-      "title": "Used Total Java Heap Memory",
+      "title": "Used Total Java Heap Memory: Java Agent vs  mem_pool_gc_event ",
       "type": "timeseries"
     }
   ],
