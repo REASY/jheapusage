@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 2,
+  "id": 3,
   "links": [],
   "panels": [
     {
@@ -84,8 +84,8 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 19,
-        "w": 19,
+        "h": 16,
+        "w": 11,
         "x": 0,
         "y": 0
       },
@@ -118,7 +118,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "runtime_jvm_memory_total_used_bytes{service_name=\"$java_app\", jvm_memory_state=\"BeforeGC\"}\nunless (time() - timestamp(runtime_jvm_memory_total_used_bytes{service_name=\"$java_app\", jvm_memory_state=\"BeforeGC\"}) > 10)",
+          "expr": "runtime_jvm_memory_total_used_bytes{service_name=\"$java_app\", jvm_memory_state=\"BeforeGC\"}\nunless (time() - timestamp(runtime_jvm_memory_total_used_bytes{service_name=\"$java_app\", jvm_memory_state=\"BeforeGC\"}) > 2)",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -134,7 +134,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "runtime_jvm_memory_total_used_bytes{service_name=\"$java_app\", jvm_memory_state=\"AfterGC\"}\nunless (time() - timestamp(runtime_jvm_memory_total_used_bytes{service_name=\"$java_app\", jvm_memory_state=\"AfterGC\"}) > 10)",
+          "expr": "runtime_jvm_memory_total_used_bytes{service_name=\"$java_app\", jvm_memory_state=\"AfterGC\"}\nunless (time() - timestamp(runtime_jvm_memory_total_used_bytes{service_name=\"$java_app\", jvm_memory_state=\"AfterGC\"}) > 2)",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -150,7 +150,118 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum(max by(jvm_memory_manager_name) ((runtime_jvm_memory_used_bytes{jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\", jvm_memory_state=\"BeforeGC\"})\nunless (time() - timestamp(runtime_jvm_memory_used_bytes{jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\", jvm_memory_state=\"BeforeGC\"}) > 10)))",
+          "expr": "sum((jvm_memory_used_bytes{jvm_memory_type=\"heap\", jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\"})\nunless (time() - timestamp(jvm_memory_used_bytes{jvm_memory_type=\"heap\", jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\"}) > 2))",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "OpenTelemetry JavaAgent",
+          "range": true,
+          "refId": "E",
+          "useBackend": false
+        }
+      ],
+      "title": "Used Total Java Heap Memory",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "webstore-metrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": true,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "fieldMinMax": true,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 16,
+        "w": 12,
+        "x": 11,
+        "y": 0
+      },
+      "id": 5,
+      "interval": "10",
+      "options": {
+        "legend": {
+          "calcs": [
+            "max",
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortBy": "Name",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "webstore-metrics"
+          },
+          "disableTextWrap": false,
+          "editorMode": "code",
+          "expr": "sum(max by(jvm_memory_manager_name) ((runtime_jvm_memory_used_bytes{jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\", jvm_memory_state=\"BeforeGC\"})\nunless (time() - timestamp(runtime_jvm_memory_used_bytes{jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\", jvm_memory_state=\"BeforeGC\"}) > 2)))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -166,7 +277,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum(max by(jvm_memory_manager_name) ((runtime_jvm_memory_used_bytes{jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\", jvm_memory_state=\"AfterGC\"})\nunless (time() - timestamp(runtime_jvm_memory_used_bytes{jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\", jvm_memory_state=\"AfterGC\"}) > 10)))",
+          "expr": "sum(max by(jvm_memory_manager_name) ((runtime_jvm_memory_used_bytes{jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\", jvm_memory_state=\"AfterGC\"})\nunless (time() - timestamp(runtime_jvm_memory_used_bytes{jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\", jvm_memory_state=\"AfterGC\"}) > 2)))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -182,7 +293,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum((jvm_memory_used_bytes{jvm_memory_type=\"heap\", jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\"})\nunless (time() - timestamp(jvm_memory_used_bytes{jvm_memory_type=\"heap\", jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\"}) > 10))",
+          "expr": "sum((jvm_memory_used_bytes{jvm_memory_type=\"heap\", jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\"})\nunless (time() - timestamp(jvm_memory_used_bytes{jvm_memory_type=\"heap\", jvm_memory_pool_name=~\"G1 Eden Space|G1 Survivor Space|G1 Old Gen\"}) > 2))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
