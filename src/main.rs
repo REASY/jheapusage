@@ -45,6 +45,9 @@ struct AppArgs {
     /// Java process PID
     #[clap(long)]
     pid: pid_t,
+    /// Sampling interval in milliseconds
+    #[clap(long, default_value_t = 1000)]
+    sampling_interval_ms: u32,
     /// Verbose debug output
     #[arg(short, long)]
     verbose: bool,
@@ -183,6 +186,8 @@ async fn main() -> Result<()> {
         skel.maps.rodata_data.st_ino = stat.st_ino;
         skel.maps.rodata_data.target_userspace_pid = args.pid;
         skel.maps.rodata_data.boot_time_ns = *BOOT_DATE_TIME;
+        skel.maps.rodata_data.sampling_interval_ns =
+            Duration::from_millis(args.sampling_interval_ms as u64).as_nanos() as u64;
     });
     epbf.setup(args.pid, libjvm_path.clone(), report_gc_heap_summary_name)?;
     let jvm_maps = epbf.maps();

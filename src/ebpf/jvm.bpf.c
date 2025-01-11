@@ -11,9 +11,13 @@ const volatile __u64 st_dev = 0;
 const volatile __u64 st_ino = 0;
 const volatile __u64 boot_time_ns = 0;
 const volatile pid_t target_userspace_pid = 0;
+const volatile __u64 sampling_interval_ns = 0;
 
 volatile _Bool has_exited = false;
 volatile __s32 exit_code = 0;
+
+volatile __u64 report_gc_heap_summary_BeforeGC_ts = 0;
+volatile __u64 report_gc_heap_summary_AfterGC_ts = 0;
 
 // Dummy instance to get skeleton to generate definition for exported C structs
 // to Rust
@@ -29,6 +33,20 @@ struct {
 	__uint(type, BPF_MAP_TYPE_RINGBUF);
 	__uint(max_entries, 4 * 1024 * 1024); // 4MB ring buffer
 } rg_send_gc_heap_summary_event SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 1024);
+	__type(key, struct pair_key);
+	__type(value, struct pair_value);
+} hotspot_mem_pool_gc_begin_pair_map SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 1024);
+	__type(key, struct pair_key);
+	__type(value, struct pair_value);
+} hotspot_mem_pool_gc_end_pair_map SEC(".maps");
 
 SEC("tracepoint/sched/sched_process_exit")
 int sched_process_exit(struct trace_event_raw_sched_process_template *ctx)
@@ -74,6 +92,25 @@ int BPF_UPROBE(report_gc_heap_summary, void *clazz, enum gc_when_type_enum when,
 		return 0;
 	}
 
+	__u64 ts = bpf_ktime_get_ns();
+	if (sampling_interval_ns > 0) {
+		if (when == 0) {
+			if (!should_report(ts,
+					   report_gc_heap_summary_BeforeGC_ts,
+					   sampling_interval_ns)) {
+				return 0;
+			}
+			report_gc_heap_summary_BeforeGC_ts = ts;
+		} else {
+			if (!should_report(ts,
+					   report_gc_heap_summary_AfterGC_ts,
+					   sampling_interval_ns)) {
+				return 0;
+			}
+			report_gc_heap_summary_AfterGC_ts = ts;
+		}
+	}
+
 	__u64 pid_tgid = bpf_get_current_pid_tgid();
 	pid_t userspace_pid, userspace_tid;
 	extract_userspace_ids(pid_tgid, &userspace_pid, &userspace_tid);
@@ -87,7 +124,7 @@ int BPF_UPROBE(report_gc_heap_summary, void *clazz, enum gc_when_type_enum when,
 	bpf_get_ns_current_pid_tgid(st_dev, st_ino, &ns,
 				    sizeof(struct bpf_pidns_info));
 
-	e->ts = bpf_ktime_get_ns() + boot_time_ns;
+	e->ts = ts + boot_time_ns;
 	e->global_pid = userspace_pid;
 	e->global_tid = userspace_tid;
 	e->ns_pid = ns.tgid;
@@ -131,6 +168,19 @@ int BPF_USDT(hotspot_mem_pool_gc_begin, uintptr_t *manager, int manager_len,
 	     uintptr_t *pool, int pool_len, __u64 init_size, __u64 used,
 	     __u64 committed, __u64 max_size)
 {
+	struct pair_key key = {};
+	if (read_pair_key(manager, manager_len, pool, pool_len, &key) != 0) {
+		return 0;
+	}
+
+	__u64 ts = bpf_ktime_get_ns();
+	if (sampling_interval_ns > 0) {
+		if (!should_sample_event(&key, ts, sampling_interval_ns,
+					 &hotspot_mem_pool_gc_begin_pair_map)) {
+			return 0;
+		}
+	}
+
 	// https://github.com/openjdk/jdk/blob/jdk-21%2B35/src/hotspot/share/services/memoryManager.cpp#L230
 
 	struct mem_pool_gc_event *e;
@@ -146,32 +196,14 @@ int BPF_USDT(hotspot_mem_pool_gc_begin, uintptr_t *manager, int manager_len,
 	bpf_get_ns_current_pid_tgid(st_dev, st_ino, &ns,
 				    sizeof(struct bpf_pidns_info));
 
-	e->ts = bpf_ktime_get_ns() + boot_time_ns;
+	e->ts = ts + boot_time_ns;
 	e->global_pid = userspace_pid;
 	e->global_tid = userspace_tid;
 	e->ns_pid = ns.tgid;
 	e->ns_tid = ns.pid;
 
-	__builtin_memset(e->manager, 0, sizeof(e->manager));
-	__builtin_memset(e->pool, 0, sizeof(e->pool));
-	if (manager && manager_len > 0) {
-		if (bpf_probe_read_str(e->manager, sizeof(e->manager),
-				       (void *)manager) < 0) {
-			bpf_printk(
-				"hotspot_mem_pool_gc_begin: bpf_probe_read_str failed to copy from "
-				"`manager` %d chars into buffer e->manager with the size %d",
-				manager_len, sizeof(e->manager));
-		}
-	}
-	if (pool && pool_len > 0) {
-		if (bpf_probe_read_str(e->pool, sizeof(e->pool), (void *)pool) <
-		    0) {
-			bpf_printk(
-				"hotspot_mem_pool_gc_begin: bpf_probe_read_str failed to copy "
-				"from `pool` %d chars into buffer e->pool with the size %d",
-				pool_len, sizeof(e->pool));
-		}
-	}
+	__builtin_memcpy(e->manager, key.manager, sizeof(e->manager));
+	__builtin_memcpy(e->pool, key.pool, sizeof(e->pool));
 
 	e->init_size = init_size;
 	e->used = used;
@@ -188,6 +220,18 @@ int BPF_USDT(hotspot_mem_pool_gc_end, uintptr_t *manager, int manager_len,
 	     uintptr_t *pool, int pool_len, __u64 init_size, __u64 used,
 	     __u64 committed, __u64 max_size)
 {
+	struct pair_key key = {};
+	if (read_pair_key(manager, manager_len, pool, pool_len, &key) != 0) {
+		return 0;
+	}
+	__u64 ts = bpf_ktime_get_ns();
+	if (sampling_interval_ns > 0) {
+		if (!should_sample_event(&key, ts, sampling_interval_ns,
+					 &hotspot_mem_pool_gc_end_pair_map)) {
+			return 0;
+		}
+	}
+
 	// https://github.com/openjdk/jdk/blob/jdk-21%2B35/src/hotspot/share/services/memoryManager.cpp#L263
 
 	struct mem_pool_gc_event *e;
@@ -203,7 +247,7 @@ int BPF_USDT(hotspot_mem_pool_gc_end, uintptr_t *manager, int manager_len,
 	bpf_get_ns_current_pid_tgid(st_dev, st_ino, &ns,
 				    sizeof(struct bpf_pidns_info));
 
-	e->ts = bpf_ktime_get_ns() + boot_time_ns;
+	e->ts = ts + boot_time_ns;
 	e->global_pid = userspace_pid;
 	e->global_tid = userspace_tid;
 	e->ns_pid = ns.tgid;

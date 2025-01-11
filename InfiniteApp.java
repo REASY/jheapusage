@@ -10,7 +10,7 @@ public class InfiniteApp {
         while (true) {
             int nextSize = rnd.nextInt(10000000, 20000000);
             buffer = new long[nextSize];
-            Thread.sleep(1000);
+            Thread.sleep(20);
             if (nextSize % 123456 == 0) {
                 System.out.println("buffer length: " + buffer.length);
             }

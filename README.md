@@ -90,9 +90,13 @@ Prints heap usage of a running Java program
 Usage: jheapusage [OPTIONS] --pid <PID>
 
 Options:
-      --pid <PID>  Java process PID
-  -v, --verbose    Verbose debug output
-  -h, --help       Print help
+      --pid <PID>
+          Java process PID
+      --sampling-interval-ms <SAMPLING_INTERVAL_MS>
+          Sampling interval in milliseconds [default: 1000]
+  -v, --verbose
+          Verbose debug output
+  -h, --help
 ```
 
 ### Example of run with [InfiniteApp.java](InfiniteApp.java)
@@ -141,7 +145,7 @@ Options:
      --leak-check=full \
      --num-callers=100 \
      --log-file=valgrind.log \
-     target/release/jheapusage --pid 59258#PID#
+     target/release/jheapusage --pid #PID#
    ```
 3. Analyze `valgrind.log`, the following errors **should not be in the log**,
    more [Understanding Valgrind Error Messages](https://cs3157.github.io/www/2022-9/guides/valgrind.html)
